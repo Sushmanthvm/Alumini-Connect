@@ -1,0 +1,130 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-glow: var(--primary-glow);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root {
+  --radius: 0.875rem;
+  --background: oklch(0.98 0.01 250);
+  --foreground: oklch(0.18 0.04 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.04 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.04 260);
+  --primary: oklch(0.52 0.22 265);
+  --primary-foreground: oklch(0.98 0.01 250);
+  --primary-glow: oklch(0.68 0.20 280);
+  --secondary: oklch(0.95 0.02 260);
+  --secondary-foreground: oklch(0.25 0.05 265);
+  --muted: oklch(0.95 0.015 260);
+  --muted-foreground: oklch(0.50 0.03 260);
+  --accent: oklch(0.72 0.18 200);
+  --accent-foreground: oklch(0.15 0.03 260);
+  --destructive: oklch(0.60 0.24 25);
+  --destructive-foreground: oklch(0.98 0.01 250);
+  --border: oklch(0.90 0.015 260);
+  --input: oklch(0.92 0.015 260);
+  --ring: oklch(0.52 0.22 265);
+
+  --gradient-hero: linear-gradient(135deg, oklch(0.52 0.22 265) 0%, oklch(0.68 0.20 280) 50%, oklch(0.72 0.18 200) 100%);
+  --gradient-bg: linear-gradient(180deg, oklch(0.98 0.01 250) 0%, oklch(0.94 0.03 265) 100%);
+  --gradient-card: linear-gradient(135deg, oklch(1 0 0 / 0.85), oklch(1 0 0 / 0.55));
+  --shadow-glass: 0 8px 32px -8px oklch(0.52 0.22 265 / 0.18);
+  --shadow-glow: 0 20px 60px -15px oklch(0.52 0.22 265 / 0.35);
+  --shadow-elegant: 0 10px 40px -10px oklch(0.30 0.10 265 / 0.25);
+}
+
+.dark {
+  --background: oklch(0.16 0.03 265);
+  --foreground: oklch(0.96 0.01 250);
+  --card: oklch(0.22 0.04 265);
+  --card-foreground: oklch(0.96 0.01 250);
+  --popover: oklch(0.22 0.04 265);
+  --popover-foreground: oklch(0.96 0.01 250);
+  --primary: oklch(0.68 0.20 280);
+  --primary-foreground: oklch(0.15 0.03 260);
+  --secondary: oklch(0.28 0.04 265);
+  --secondary-foreground: oklch(0.96 0.01 250);
+  --muted: oklch(0.28 0.04 265);
+  --muted-foreground: oklch(0.70 0.03 260);
+  --accent: oklch(0.72 0.18 200);
+  --accent-foreground: oklch(0.15 0.03 260);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.68 0.20 280);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background: var(--gradient-bg);
+    color: var(--color-foreground);
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: var(--gradient-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid oklch(1 0 0 / 0.5);
+    box-shadow: var(--shadow-glass);
+  }
+  .gradient-text {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .gradient-bg-hero { background: var(--gradient-hero); }
+  .shadow-glow { box-shadow: var(--shadow-glow); }
+  .shadow-elegant { box-shadow: var(--shadow-elegant); }
+  .perspective-1000 { perspective: 1000px; }
+  .preserve-3d { transform-style: preserve-3d; }
+  .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+}
+
+@keyframes blur-focus {
+  0% { filter: blur(20px); opacity: 0; letter-spacing: 0.5em; }
+  100% { filter: blur(0); opacity: 1; letter-spacing: 0.02em; }
+}
+.animate-blur-focus { animation: blur-focus 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+
+@keyframes marquee-x {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee { animation: marquee-x 28s linear infinite; }
+
