@@ -11,7 +11,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MENTEE_REQUESTS, type MenteeRequest } from "@/lib/mock-data";
+import type { ConnectionRequestRow, ScheduledMeeting } from "@/lib/types";
+import { requireAuth } from "@/lib/route-guards";
+import {
+  acceptAndScheduleMeeting,
+  countProfileViews,
+  denyConnectionRequest,
+  fetchPendingRequestsForAlumni,
+  fetchScheduledMeetingsForAlumni,
+} from "@/lib/api/connections";
 
 export const Route = createFileRoute("/alumni")({
   head: () => ({
@@ -20,47 +28,73 @@ export const Route = createFileRoute("/alumni")({
       { name: "description", content: "Your mentorship analytics and outreach impact." },
     ],
   }),
+  beforeLoad: () => requireAuth("alumni"),
+  loader: async () => {
+    const { profile } = await requireAuth("alumni");
+    const [pending, scheduled, profileViews] = await Promise.all([
+      fetchPendingRequestsForAlumni(profile.id),
+      fetchScheduledMeetingsForAlumni(profile.id),
+      countProfileViews(profile.id),
+    ]);
+    return { profile, pending, scheduled, profileViews };
+  },
   component: AlumniDashboard,
 });
 
-type Accepted = {
-  request: MenteeRequest;
-  date: string;
-  from: string;
-  to: string;
-};
-
 function AlumniDashboard() {
-  const [requests, setRequests] = useState<MenteeRequest[]>(MENTEE_REQUESTS);
-  const [accepted, setAccepted] = useState<Accepted[]>([]);
+  const { profile, pending: initialPending, scheduled: initialScheduled, profileViews } =
+    Route.useLoaderData();
+  const [requests, setRequests] = useState<ConnectionRequestRow[]>(initialPending);
+  const [accepted, setAccepted] = useState<ScheduledMeeting[]>(initialScheduled);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [reviewedOpen, setReviewedOpen] = useState(false);
-  const [scheduling, setScheduling] = useState<MenteeRequest | null>(null);
+  const [scheduling, setScheduling] = useState<ConnectionRequestRow | null>(null);
   const [meetDate, setMeetDate] = useState("");
   const [timeFrom, setTimeFrom] = useState("");
   const [timeTo, setTimeTo] = useState("");
   const [view, setView] = useState<"profile" | "connect">("profile");
 
-  const handleDeny = (id: string) => {
-    setRequests((rs) => rs.filter((r) => r.id !== id));
-    toast.message("Request denied");
+  const handleDeny = async (id: string) => {
+    try {
+      await denyConnectionRequest(id);
+      setRequests((rs) => rs.filter((r) => r.id !== id));
+      toast.message("Request denied");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not deny request");
+    }
   };
 
-  const handleAccept = (req: MenteeRequest) => {
+  const handleAccept = (req: ConnectionRequestRow) => {
     setScheduling(req);
   };
 
-  const sendSchedule = (e: React.FormEvent) => {
+  const sendSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scheduling) return;
-    setAccepted((a) => [...a, { request: scheduling, date: meetDate, from: timeFrom, to: timeTo }]);
-    setRequests((rs) => rs.filter((r) => r.id !== scheduling.id));
-    toast.success(`Meeting scheduled! Event automatically added to both Student and Alumni Google Calendars.`, {
-      description: `${scheduling.name} · ${meetDate} · ${timeFrom} – ${timeTo}`,
-    });
-    setScheduling(null);
-    setMeetDate(""); setTimeFrom(""); setTimeTo("");
-    if (requests.length <= 1) setInboxOpen(false);
+    try {
+      await acceptAndScheduleMeeting({
+        requestId: scheduling.id,
+        scheduledByUserId: profile.id,
+        meetingDate: meetDate,
+        startTime: timeFrom,
+        endTime: timeTo,
+      });
+      setAccepted((a) => [
+        ...a,
+        { id: crypto.randomUUID(), request: scheduling, date: meetDate, from: timeFrom, to: timeTo },
+      ]);
+      setRequests((rs) => rs.filter((r) => r.id !== scheduling.id));
+      toast.success(`Meeting scheduled!`, {
+        description: `${scheduling.name} · ${meetDate} · ${timeFrom} – ${timeTo}`,
+      });
+      setScheduling(null);
+      setMeetDate("");
+      setTimeFrom("");
+      setTimeTo("");
+      if (requests.length <= 1) setInboxOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not schedule meeting");
+    }
   };
 
   const navTabs = (
@@ -90,7 +124,7 @@ function AlumniDashboard() {
     <PageTransition>
       <Toaster position="top-center" richColors />
       <div className="mx-auto max-w-6xl px-4 pb-16">
-        <TopNav role="alumni" name="Priya" avatarSeed="Priya" extraNav={navTabs} />
+        <TopNav role="alumni" profile={profile} extraNav={navTabs} />
 
         <AnimatePresence mode="wait">
           {view === "profile" ? (
@@ -107,7 +141,7 @@ function AlumniDashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-3xl font-bold tracking-tight sm:text-4xl"
                 >
-                  Welcome back, Priya 👋
+                  Welcome back, {profile.fullName.split(" ")[0]} 👋
                 </motion.h1>
                 <p className="mt-2 text-muted-foreground">
                   Here's the impact you've made this quarter.
@@ -115,9 +149,9 @@ function AlumniDashboard() {
               </section>
 
               <section className="mt-8 grid gap-5 sm:grid-cols-3">
-                <StatCard icon={<Eye className="h-5 w-5" />} label="Profiles Visited" value={1248} onClick={() => toast.info("Profile analytics coming soon")} />
-                <StatCard icon={<Mail className="h-5 w-5" />} label="Requests Inbox" value={requests.length || 87} onClick={() => setInboxOpen(true)} />
-                <StatCard icon={<Star className="h-5 w-5" />} label="Reviewed" value={accepted.length || 42} onClick={() => setReviewedOpen(true)} />
+                <StatCard icon={<Eye className="h-5 w-5" />} label="Profiles Visited" value={profileViews} onClick={() => toast.info(`${profileViews} profile views recorded`)} />
+                <StatCard icon={<Mail className="h-5 w-5" />} label="Requests Inbox" value={requests.length} onClick={() => setInboxOpen(true)} />
+                <StatCard icon={<Star className="h-5 w-5" />} label="Reviewed" value={accepted.length} onClick={() => setReviewedOpen(true)} />
               </section>
 
               <section className="mt-10 grid gap-5 lg:grid-cols-2">
@@ -285,9 +319,9 @@ function AlumniDashboard() {
                 No scheduled meetings yet. Accept a request from your inbox to get started.
               </p>
             ) : (
-              accepted.map((a, i) => (
+              accepted.map((a) => (
                 <motion.div
-                  key={i}
+                  key={a.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="glass rounded-xl p-4"

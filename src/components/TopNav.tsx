@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { LogOut, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { LogOut, Pencil, Plus, Trash2, Upload, Loader2 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,34 +9,118 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
+import type { UserProfile } from "@/lib/types";
+import { logout } from "@/lib/auth";
+import { getAvatarPublicUrl, uploadAvatar } from "@/lib/storage";
+import { fetchAlumniProfile, updateAlumniProfile } from "@/lib/api/alumni";
+import { assertSupabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Props = {
   role: "student" | "alumni";
-  name: string;
-  avatarSeed: string;
+  profile: UserProfile;
   extraNav?: ReactNode;
 };
 
 type CareerEntry = { year: string; company: string; role: string };
 
-export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
+export function TopNav({ role, profile, extraNav }: Props) {
   const navigate = useNavigate();
+  const { refreshProfile } = useAuth();
   const [open, setOpen] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const avatar =
-    photoPreview ||
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
+  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
 
-  const [career, setCareer] = useState<CareerEntry[]>([
-    { year: "2018", company: "Flipkart", role: "SWE Intern" },
-    { year: "2019", company: "Razorpay", role: "SDE-1" },
-    { year: "2022", company: "Google", role: "SDE-2" },
-    { year: "2024", company: "Google", role: "Senior SWE" },
-  ]);
+  const avatar =
+    photoPreview || getAvatarPublicUrl(profile.photoUrl, profile.id);
+
+  const [fullName, setFullName] = useState(profile.fullName);
+  const [location, setLocation] = useState("");
+  const [company, setCompany] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [skills, setSkills] = useState("");
+  const [tech, setTech] = useState("");
+  const [certifications, setCertifications] = useState("");
+  const [bio, setBio] = useState("");
+  const [career, setCareer] = useState<CareerEntry[]>([]);
+  const [semester, setSemester] = useState("");
+
+  useEffect(() => {
+    if (!open || role !== "alumni") return;
+    setLoadingProfile(true);
+    void fetchAlumniProfile(profile.id)
+      .then((a) => {
+        if (!a) return;
+        setFullName(a.name);
+        setLocation(a.location);
+        setCompany(a.company);
+        setJobTitle(a.role);
+        setSkills(a.skills.join(", "));
+        setTech(a.tech.join(", "));
+        setCertifications(a.certifications.join(", "));
+        setBio(a.bio);
+        setCareer(a.careerPath.map((c) => ({ year: c.year, company: c.company, role: c.role })));
+      })
+      .finally(() => setLoadingProfile(false));
+  }, [open, role, profile.id]);
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setPhotoPreview(URL.createObjectURL(f));
+    if (f) {
+      setPendingPhoto(f);
+      setPhotoPreview(URL.createObjectURL(f));
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success("Logged out");
+      navigate({ to: "/" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Logout failed");
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (pendingPhoto) {
+        await uploadAvatar(profile.id, pendingPhoto);
+        setPendingPhoto(null);
+      }
+
+      if (role === "student") {
+        const supabase = assertSupabase();
+        await supabase.from("profiles").update({ full_name: fullName }).eq("id", profile.id);
+        const sem = parseInt(semester.replace(/\D/g, ""), 10);
+        if (sem) {
+          await supabase.from("students").update({ semester: sem }).eq("user_id", profile.id);
+        }
+      } else {
+        await updateAlumniProfile(profile.id, {
+          fullName,
+          location,
+          jobTitle,
+          companyName: company,
+          bio,
+          skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
+          tech: tech.split(",").map((t) => t.trim()).filter(Boolean),
+          certifications: certifications.split(",").map((c) => c.trim()).filter(Boolean),
+          careerPath: career,
+        });
+      }
+
+      await refreshProfile();
+      setOpen(false);
+      toast.success("Profile updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save profile");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -49,7 +133,7 @@ export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
         <div className="flex items-center gap-3">
           {extraNav}
           <span className="hidden text-sm text-muted-foreground sm:block">
-            {role === "student" ? "Student" : "Alumni"} · {name}
+            {role === "student" ? "Student" : "Alumni"} · {profile.fullName}
           </span>
           <motion.button
             whileHover={{ scale: 1.06 }}
@@ -57,12 +141,12 @@ export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
             onClick={() => setOpen(true)}
             className="relative h-10 w-10 overflow-hidden rounded-full border-2 border-white shadow-elegant"
           >
-            <img src={avatar} alt={name} className="h-full w-full" />
+            <img src={avatar} alt={profile.fullName} className="h-full w-full object-cover" />
             <span className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
               <Pencil className="h-2.5 w-2.5" />
             </span>
           </motion.button>
-          <Button variant="ghost" size="icon" onClick={() => { toast.success("Logged out"); navigate({ to: "/" }); }}>
+          <Button variant="ghost" size="icon" onClick={() => void handleLogout()}>
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
@@ -74,7 +158,6 @@ export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
             <DialogTitle>Edit your profile</DialogTitle>
           </DialogHeader>
 
-          {/* Photo uploader (shared) */}
           <div className="flex items-center gap-4 rounded-xl bg-muted/40 p-3">
             <div className="h-16 w-16 overflow-hidden rounded-full ring-2 ring-white shadow-elegant">
               <img src={avatar} alt="" className="h-full w-full object-cover" />
@@ -87,47 +170,54 @@ export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
             </label>
           </div>
 
-          {role === "student" ? (
+          {loadingProfile && role === "alumni" ? (
+            <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading profile…
+            </p>
+          ) : role === "student" ? (
             <div className="space-y-3 pt-2">
               <div className="grid gap-2">
                 <Label>Name</Label>
-                <Input defaultValue={name} />
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Current Semester</Label>
-                <Input defaultValue="Semester 5" />
+                <Input
+                  placeholder="5"
+                  value={semester}
+                  onChange={(e) => setSemester(e.target.value)}
+                />
               </div>
-
-              {/* Locked / read-only fields */}
               <div className="mt-4 space-y-3 rounded-xl border border-dashed border-border bg-muted/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  🔒 Locked — contact admin to update
+                  Locked — contact admin to update
                 </p>
-                <ReadOnly label="Batch" value="2024" />
-                <ReadOnly label="Department" value="Computer Science" />
-                <ReadOnly label="Roll Number" value="CS21B1042" />
+                <ReadOnly label="Roll Number" value={profile.rollNumber ?? "—"} />
+                <ReadOnly label="Department Email" value={profile.departmentEmail ?? "—"} />
               </div>
             </div>
           ) : (
             <div className="space-y-3 pt-2">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Name" defaultValue={name} />
-                <Field label="Location" defaultValue="Bangalore, IN" />
+                <Field label="Name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+                <Field label="Location" value={location} onChange={(e) => setLocation(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Current Company" defaultValue="Google" />
-                <Field label="Current Job Role" defaultValue="Senior SWE" />
+                <Field label="Current Company" value={company} onChange={(e) => setCompany(e.target.value)} />
+                <Field label="Current Job Role" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
               </div>
-              <Field label="Skills (comma-separated)" defaultValue="System Design, Leadership, Distributed Systems" />
-              <Field label="Tech Used" defaultValue="Go, Kubernetes, GCP, Python" />
-              <Field label="Extra Curricular" defaultValue="Coding Club President, Hackathon Organizer" />
-              <Field label="Certifications" defaultValue="GCP Architect, Kubernetes CKA" />
+              <Field label="Skills (comma-separated)" value={skills} onChange={(e) => setSkills(e.target.value)} />
+              <Field label="Tech Used" value={tech} onChange={(e) => setTech(e.target.value)} />
+              <Field
+                label="Certifications"
+                value={certifications}
+                onChange={(e) => setCertifications(e.target.value)}
+              />
               <div className="grid gap-2">
                 <Label>Personal Quote</Label>
-                <Textarea defaultValue="Mentor 5+ juniors annually. Pay it forward." rows={2} />
+                <Textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={2} />
               </div>
 
-              {/* Dynamic Career Path editor */}
               <div className="mt-4 space-y-3 rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold">Career Path Timeline</Label>
@@ -192,7 +282,15 @@ export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
           )}
 
           <DialogFooter>
-            <Button onClick={() => { setOpen(false); toast.success("Profile updated"); }}>Save changes</Button>
+            <Button onClick={() => void handleSave()} disabled={saving || loadingProfile}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                "Save changes"
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

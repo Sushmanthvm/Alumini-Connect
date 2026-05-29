@@ -1,26 +1,37 @@
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState } from "react";
-import { GraduationCap, MapPin, ArrowRight } from "lucide-react";
-import { ALUMNI } from "@/lib/mock-data";
-
-// Batches 2005 .. 2023 (descending)
-const BATCHES = Array.from({ length: 2023 - 2005 + 1 }, (_, i) => String(2023 - i));
+import { useEffect, useState } from "react";
+import { GraduationCap, MapPin, ArrowRight, Loader2 } from "lucide-react";
+import { fetchAlumniDirectory, fetchGraduationBatchYears } from "@/lib/api/alumni";
+import type { AlumniCard } from "@/lib/types";
 
 type Degree = "B.tech CYS" | "M.tech CYS";
 
 export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: string }) {
+  const [batches, setBatches] = useState<string[]>([]);
   const [showBatches, setShowBatches] = useState(false);
   const [batch, setBatch] = useState<string | null>(null);
   const [degree, setDegree] = useState<Degree | null>(null);
+  const [filtered, setFiltered] = useState<AlumniCard[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void fetchGraduationBatchYears().then((years) => setBatches(years.map(String)));
+  }, []);
 
   const allowsBtech = batch !== null && Number(batch) >= 2021;
   const degreeOptions: Degree[] = allowsBtech ? ["B.tech CYS", "M.tech CYS"] : ["M.tech CYS"];
 
-  const filtered = useMemo(
-    () => (batch && degree ? ALUMNI.filter((a) => a.batch === batch) : []),
-    [batch, degree],
-  );
+  useEffect(() => {
+    if (!batch || !degree) {
+      setFiltered([]);
+      return;
+    }
+    setLoading(true);
+    void fetchAlumniDirectory(batch, degree)
+      .then(setFiltered)
+      .finally(() => setLoading(false));
+  }, [batch, degree]);
 
   const selectBatch = (b: string) => {
     setBatch(b);
@@ -29,7 +40,6 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
 
   return (
     <>
-      {/* Interactive Graduation Cap */}
       <section className="mt-16 flex flex-col items-center text-center">
         <AnimatePresence mode="wait">
           {!showBatches && (
@@ -75,7 +85,7 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
               <div className="glass rounded-3xl px-8 py-6 shadow-elegant">
                 <p className="text-center text-sm font-medium text-muted-foreground">Choose an Alumni Batch</p>
                 <div className="mt-4 flex max-h-[340px] flex-col items-stretch gap-2 overflow-y-auto pr-1 min-w-[240px]">
-                  {BATCHES.map((b, i) => {
+                  {batches.map((b, i) => {
                     const active = batch === b;
                     return (
                       <motion.button
@@ -140,7 +150,6 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
         </AnimatePresence>
       </section>
 
-      {/* Directory grid */}
       <AnimatePresence>
         {batch && degree && (
           <motion.div
@@ -154,13 +163,19 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
               <div>
                 <h2 className="text-2xl font-bold tracking-tight">{heading}</h2>
                 <p className="text-sm text-muted-foreground">
-                  Batch of {batch} · {degree} · {filtered.length} mentors
+                  Batch of {batch} · {degree} · {loading ? "…" : `${filtered.length} mentors`}
                 </p>
               </div>
             </div>
 
-            {filtered.length === 0 ? (
-              <p className="mt-8 text-center text-muted-foreground">No alumni found for this selection.</p>
+            {loading ? (
+              <p className="mt-8 flex items-center justify-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /> Loading alumni…
+              </p>
+            ) : filtered.length === 0 ? (
+              <p className="mt-8 text-center text-muted-foreground">
+                No alumni in the directory for this batch yet. Alumni can register and appear here.
+              </p>
             ) : (
               <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 perspective-1000">
                 {filtered.map((a, idx) => (
@@ -178,7 +193,7 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
                       <div className="glass relative h-full rounded-2xl p-5 transition-shadow duration-300 group-hover:shadow-glow">
                         <div className="flex items-center gap-4">
                           <div className="h-16 w-16 overflow-hidden rounded-2xl bg-muted ring-2 ring-white">
-                            <img src={a.photo} alt={a.name} className="h-full w-full" />
+                            <img src={a.photo} alt={a.name} className="h-full w-full object-cover" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <h3 className="truncate font-semibold">{a.name}</h3>
@@ -187,7 +202,10 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
                           </div>
                         </div>
                         <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{a.location}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {a.location}
+                          </span>
                           <span className="inline-flex items-center gap-1 text-primary opacity-0 transition-opacity group-hover:opacity-100">
                             View <ArrowRight className="h-3 w-3" />
                           </span>
