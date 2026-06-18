@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { toast, Toaster } from "sonner";
 import { PageTransition } from "@/components/PageTransition";
+import { supabase } from '../lib/supabase'
+
+console.log("Supabase Connected:", supabase)
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,7 +30,7 @@ function LandingPage() {
   return (
     <PageTransition>
       <Toaster position="top-center" richColors />
-      <div className="relative min-h-screen overflow-hidden">
+      <div className="relative min-h-screen overflow-x-hidden">
         {/* Ambient blobs */}
         <motion.div
           className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full blur-3xl opacity-40 gradient-bg-hero"
@@ -140,18 +143,176 @@ function AuthCard({ mode, onFlip, active }: { mode: "login" | "register"; onFlip
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const navigate = useNavigate();
+const [studentLoginRoll, setStudentLoginRoll] = useState("");
+const [studentLoginEmail, setStudentLoginEmail] = useState("");
+const [studentLoginPassword, setStudentLoginPassword] = useState("");
+const [studentName, setStudentName] = useState("");
+const [studentEmail, setStudentEmail] = useState("");
+const [studentRollNumber, setStudentRollNumber] = useState("");
+const [studentBatch, setStudentBatch] = useState("");
+const [studentSemester, setStudentSemester] = useState("");
+const [studentPassword, setStudentPassword] = useState("");
+const [alumniName, setAlumniName] = useState("");
+const [alumniEmail, setAlumniEmail] = useState("");
+const [alumniBatchYear, setAlumniBatchYear] = useState("");
+const [alumniLocation, setAlumniLocation] = useState("");
+const [alumniCompany, setAlumniCompany] = useState("");
+const [alumniJobRole, setAlumniJobRole] = useState("");
+const [alumniPassword, setAlumniPassword] = useState("");
+const [alumniLoginEmail, setAlumniLoginEmail] = useState("");
+const [alumniLoginCode, setAlumniLoginCode] = useState("");
+const [alumniLoginPassword, setAlumniLoginPassword] = useState("");
+const [alumniDegree, setAlumniDegree] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast.success(`Welcome back, ${tab === "student" ? "Student" : "Alumni"}!`);
-    navigate({ to: tab === "student" ? "/student" : "/alumni" });
-  };
+  const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast.success("Registration successful! Please log in.");
-    onFlip();
-  };
+  try {
+    if (tab === "student") {
+      const { data: studentRecord, error: studentError } = await supabase
+        .from("students")
+        .select("*")
+        .eq("roll_number", studentLoginRoll)
+        .eq("department_email", studentLoginEmail)
+        .single();
+
+      if (studentError || !studentRecord) {
+        toast.error("Invalid Roll Number or Email");
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: studentLoginEmail,
+        password: studentLoginPassword,
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success("Welcome back, Student!");
+      navigate({ to: "/student" });
+      return;
+    }
+
+    const { data: alumni } = await supabase
+  .from("alumni")
+  .select("alumni_code")
+  .eq("email", alumniLoginEmail)
+  .single();
+
+if (!alumni) {
+  toast.error("Alumni account not found");
+  return;
+}
+
+if (alumni.alumni_code !== alumniLoginCode) {
+  toast.error("Invalid Alumni Code");
+  return;
+}
+
+const { error } = await supabase.auth.signInWithPassword({
+  email: alumniLoginEmail,
+  password: alumniLoginPassword,
+});
+
+if (error) {
+  toast.error(error.message);
+  return;
+}
+
+toast.success("Welcome back, Alumni!");
+navigate({ to: "/alumni" });
+return;
+  } catch (err) {
+    console.error(err);
+    toast.error("Something went wrong");
+  }
+};
+
+  const handleRegister = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  try {
+    if (tab === "student") {
+      const { data, error } = await supabase.auth.signUp({
+        email: studentEmail,
+        password: studentPassword,
+      });
+
+      if (error) {
+  console.error(error);
+  toast.error(error.message);
+  return;
+}
+
+      if (!data.user) {
+        toast.error("User creation failed");
+        return;
+      }
+
+      const { error: studentError } = await supabase
+        .from("students")
+        .insert({
+          id: data.user.id,
+          name: studentName,
+          roll_number: studentRollNumber,
+          department_email: studentEmail,
+          batch: Number(studentBatch),
+          semester: Number(studentSemester),
+        });
+
+      if (studentError) {
+        toast.error(studentError.message);
+        return;
+      }
+
+      toast.success("Student registration successful!");
+      onFlip();
+      return;
+    }
+
+const { data, error } = await supabase.auth.signUp({
+  email: alumniEmail,
+  password: alumniPassword,
+});
+
+if (error) {
+  toast.error(error.message);
+  return;
+}
+
+if (!data.user) {
+  toast.error("User creation failed");
+  return;
+}
+const alumniCode = `ALM-${Date.now().toString().slice(-4)}`;
+const { error: alumniError } = await supabase
+  .from("alumni")
+  .insert({
+    id: data.user.id,
+    name: alumniName,
+    email: alumniEmail,
+    alumni_code: alumniCode,
+    batch_year: Number(alumniBatchYear),
+    degree: alumniDegree,
+    location: alumniLocation,
+    current_company: alumniCompany,
+    current_job_role: alumniJobRole,
+  });
+
+if (alumniError) {
+  toast.error(alumniError.message);
+  return;
+}
+
+toast.success("Alumni registration successful!");
+onFlip();  } catch (err) {
+    console.error(err);
+    toast.error("Something went wrong");
+  }
+};
 
   const resetForgot = () => { setForgotStep(0); setOtp(""); setNewPw(""); setConfirmPw(""); };
 
@@ -271,15 +432,53 @@ function AuthCard({ mode, onFlip, active }: { mode: "login" | "register"; onFlip
                     </h2>
                     {tab === "student" ? (
                       <>
-                        <Field label="Roll Number" placeholder="CS21B1042" />
-                        <Field label="Department Email" type="email" placeholder="you@dept.edu" />
-                        <Field label="Password" type="password" placeholder="••••••••" />
+                        <Field
+  label="Roll Number"
+  placeholder="CB.SC.U4CYSXXXXX"
+  value={studentLoginRoll}
+  onChange={(e) => setStudentLoginRoll(e.target.value)}
+/>
+
+<Field
+  label="Department Email"
+  type="email"
+  placeholder="cb.sc.u4cysxxxxx@cb.students.amrita.edu"
+  value={studentLoginEmail}
+  onChange={(e) => setStudentLoginEmail(e.target.value)}
+/>
+
+<Field
+  label="Password"
+  type="password"
+  placeholder="••••••••"
+  value={studentLoginPassword}
+  onChange={(e) => setStudentLoginPassword(e.target.value)}
+/>
                       </>
                     ) : (
                       <>
-                        <Field label="Email" type="email" placeholder="you@company.com" />
-                        <Field label="Alumni Code" placeholder="ALM-2019-XXXX" />
-                        <Field label="Password" type="password" placeholder="••••••••" />
+                        <Field
+  label="Email"
+  type="email"
+  placeholder="you@company.com"
+  value={alumniLoginEmail}
+  onChange={(e) => setAlumniLoginEmail(e.target.value)}
+/>
+
+<Field
+  label="Alumni Code"
+  placeholder="********"
+  value={alumniLoginCode}
+  onChange={(e) => setAlumniLoginCode(e.target.value)}
+/>
+
+<Field
+  label="Password"
+  type="password"
+  placeholder="••••••••"
+  value={alumniLoginPassword}
+  onChange={(e) => setAlumniLoginPassword(e.target.value)}
+/>
                       </>
                     )}
                     <div className="flex justify-end">
@@ -304,27 +503,126 @@ function AuthCard({ mode, onFlip, active }: { mode: "login" | "register"; onFlip
                   </h2>
                   {tab === "student" ? (
                     <>
-                      <Field label="Name" placeholder="Your full name" />
-                      <Field label="Email" type="email" placeholder="you@email.com" />
-                      <Field label="Roll Number" placeholder="CS21B1042" />
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="Batch" placeholder="2024" />
-                        <Field label="Semester" placeholder="Semester 3" />
-                      </div>
-                      <Field label="Password" type="password" placeholder="••••••••" />
-                    </>
+  <Field
+    label="Name"
+    placeholder="Your full name"
+    value={studentName}
+    onChange={(e) => setStudentName(e.target.value)}
+  />
+
+  <Field
+    label="Email"
+    type="email"
+    placeholder="cb.sc.u4cysxxxxx@cb.students.amrita.edu"
+    value={studentEmail}
+    onChange={(e) => setStudentEmail(e.target.value)}
+  />
+
+  <Field
+    label="Roll Number"
+    placeholder="CB.SC.U4CYSXXXXX"
+    value={studentRollNumber}
+    onChange={(e) => setStudentRollNumber(e.target.value)}
+  />
+
+  <div className="grid grid-cols-2 gap-3">
+    <Field
+      label="Batch"
+      placeholder="20XX"
+      value={studentBatch}
+      onChange={(e) => setStudentBatch(e.target.value)}
+    />
+
+    <Field
+      label="Semester"
+      placeholder="Semester Number"
+      value={studentSemester}
+      onChange={(e) => setStudentSemester(e.target.value)}
+    />
+  </div>
+
+  <Field
+    label="Password"
+    type="password"
+    placeholder="••••••••"
+    value={studentPassword}
+    onChange={(e) => setStudentPassword(e.target.value)}
+  />
+</>
                   ) : (
                     <>
-                      <Field label="Name" placeholder="Your full name" />
-                      <Field label="Email" type="email" placeholder="you@email.com" />
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="Batch Year" placeholder="2018" />
-                        <Field label="Location" placeholder="Bangalore" />
-                      </div>
-                      <Field label="Current Company" placeholder="Google" />
-                      <Field label="Job Role" placeholder="Senior SWE" />
-                      <Field label="Password" type="password" placeholder="••••••••" />
-                    </>
+  <Field
+    label="Name"
+    placeholder="Your full name"
+    value={alumniName}
+    onChange={(e) => setAlumniName(e.target.value)}
+  />
+
+  <Field
+    label="Email"
+    type="email"
+    placeholder="you@email.com"
+    value={alumniEmail}
+    onChange={(e) => setAlumniEmail(e.target.value)}
+  />
+
+  <div className="grid grid-cols-2 gap-3">
+  <Field
+    label="Batch Year"
+    placeholder="2018"
+    value={alumniBatchYear}
+    onChange={(e) => setAlumniBatchYear(e.target.value)}
+  />
+
+  <Field
+    label="Location"
+    placeholder="Bangalore"
+    value={alumniLocation}
+    onChange={(e) => setAlumniLocation(e.target.value)}
+  />
+</div>
+
+<div className="grid gap-1.5">
+  <Label className="text-xs font-medium text-muted-foreground">
+    Degree Program
+  </Label>
+
+  <select
+  required
+  value={alumniDegree}
+  onChange={(e) => setAlumniDegree(e.target.value)}
+  className="h-12 w-full rounded-xl border border-input bg-background px-4 text-muted-foreground shadow-sm appearance-none"
+>
+  <option value="" hidden>
+    Select Degree
+  </option>
+  <option value="B.Tech">B.Tech</option>
+  <option value="M.Tech">M.Tech</option>
+</select>
+</div>
+
+  <Field
+    label="Current Company"
+    placeholder="Google"
+    value={alumniCompany}
+    onChange={(e) => setAlumniCompany(e.target.value)}
+  />
+
+  <Field
+    label="Job Role"
+    placeholder="Senior SWE"
+    value={alumniJobRole}
+    onChange={(e) => setAlumniJobRole(e.target.value)}
+  />
+
+  <Field
+    label="Password"
+    type="password"
+    placeholder="••••••••"
+    value={alumniPassword}
+    onChange={(e) => setAlumniPassword(e.target.value)}
+  />
+</>
                   )}
                   <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                     <Button type="submit" className="w-full gradient-bg-hero text-primary-foreground shadow-elegant">

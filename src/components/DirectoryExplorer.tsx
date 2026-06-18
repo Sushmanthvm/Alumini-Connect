@@ -2,25 +2,49 @@ import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { GraduationCap, MapPin, ArrowRight } from "lucide-react";
-import { ALUMNI } from "@/lib/mock-data";
-
+import { useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 // Batches 2005 .. 2023 (descending)
 const BATCHES = Array.from({ length: 2023 - 2005 + 1 }, (_, i) => String(2023 - i));
 
-type Degree = "B.tech CYS" | "M.tech CYS";
+type Degree = "B.Tech" | "M.Tech";
 
 export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: string }) {
   const [showBatches, setShowBatches] = useState(false);
   const [batch, setBatch] = useState<string | null>(null);
   const [degree, setDegree] = useState<Degree | null>(null);
+  const [alumni, setAlumni] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+  const loadAlumni = async () => {
+    const { data, error } = await supabase
+      .from("alumni")
+      .select("*");
 
+    if (!error && data) {
+      setAlumni(data);
+    }
+
+    setLoading(false);
+  };
+
+  loadAlumni();
+}, []);
   const allowsBtech = batch !== null && Number(batch) >= 2021;
-  const degreeOptions: Degree[] = allowsBtech ? ["B.tech CYS", "M.tech CYS"] : ["M.tech CYS"];
+  const degreeOptions: Degree[] =
+  allowsBtech
+    ? ["B.Tech", "M.Tech"]
+    : ["M.Tech"];
 
-  const filtered = useMemo(
-    () => (batch && degree ? ALUMNI.filter((a) => a.batch === batch) : []),
-    [batch, degree],
+const filtered = useMemo(() => {
+  if (!batch || !degree) return [];
+
+  return alumni.filter(
+    (a) =>
+      String(a.batch_year) === batch &&
+      a.degree === degree
   );
+}, [batch, degree, alumni]);
 
   const selectBatch = (b: string) => {
     setBatch(b);
@@ -178,12 +202,24 @@ export function DirectoryExplorer({ heading = "Alumni Directory" }: { heading?: 
                       <div className="glass relative h-full rounded-2xl p-5 transition-shadow duration-300 group-hover:shadow-glow">
                         <div className="flex items-center gap-4">
                           <div className="h-16 w-16 overflow-hidden rounded-2xl bg-muted ring-2 ring-white">
-                            <img src={a.photo} alt={a.name} className="h-full w-full" />
+                            <img
+  src={
+    a.avatar_path ||
+    `https://api.dicebear.com/7.x/avataaars/svg?seed=${a.name}`
+  }
+  alt={a.name}
+  className="h-full w-full"
+/>
                           </div>
                           <div className="min-w-0 flex-1">
                             <h3 className="truncate font-semibold">{a.name}</h3>
-                            <p className="truncate text-sm text-muted-foreground">{a.role}</p>
-                            <p className="truncate text-sm font-medium text-primary">{a.company}</p>
+                            <p className="truncate text-sm text-muted-foreground">
+  {a.current_job_role}
+</p>
+<p className="truncate text-xs text-muted-foreground">
+  {a.degree} • Batch {a.batch_year}
+</p>
+                            <p className="truncate text-sm font-medium text-primary">{a.current_company}</p>
                           </div>
                         </div>
                         <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">

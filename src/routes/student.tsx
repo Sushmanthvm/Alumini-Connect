@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { HERO_SLIDES, COMPANIES } from "@/lib/mock-data";
+import { HERO_SLIDES } from "@/lib/mock-data";
 import { TopNav } from "@/components/TopNav";
 import { PageTransition } from "@/components/PageTransition";
 import { Footer } from "@/components/Footer";
 import { DirectoryExplorer } from "@/components/DirectoryExplorer";
 import { Toaster } from "sonner";
+import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/student")({
   head: () => ({
@@ -20,17 +22,57 @@ export const Route = createFileRoute("/student")({
 
 function StudentDashboard() {
   const [slide, setSlide] = useState(0);
-
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [studentName, setStudentName] = useState("");
+  const [companyLogos, setCompanyLogos] = useState<any[]>([]);
   useEffect(() => {
     const i = setInterval(() => setSlide((s) => (s + 1) % HERO_SLIDES.length), 3000);
     return () => clearInterval(i);
   }, []);
 
+  useEffect(() => {
+  const loadUser = async () => {
+    const user = await getCurrentUser();
+    setCurrentUser(user);
+
+    if (user?.email) {
+      const { data } = await supabase
+        .from("students")
+        .select("name")
+        .eq("department_email", user.email)
+        .single();
+
+      if (data) {
+        setStudentName(data.name);
+      }
+    }
+  };
+  
+  loadUser();
+}, []);
+useEffect(() => {
+  const loadLogos = async () => {
+    const { data } = await supabase
+      .from("company_logos")
+      .select("*")
+      .order("company_name");
+
+    setCompanyLogos(data || []);
+  };
+
+  loadLogos();
+}, []);
+
+
   return (
     <PageTransition>
       <Toaster position="top-center" richColors />
       <div className="mx-auto max-w-6xl px-4 pb-16">
-        <TopNav role="student" name="Aarav" avatarSeed="Aarav" />
+        <TopNav
+  role="student"
+  name={studentName || "Student"}
+  avatarSeed={currentUser?.id ?? "student"}
+/>
 
         {/* Hero Slider */}
         <section className="relative mt-8 overflow-hidden rounded-3xl shadow-glow h-[360px] sm:h-[440px]">
@@ -80,14 +122,17 @@ function StudentDashboard() {
         {/* Company Marquee */}
         <section className="mt-10 overflow-hidden rounded-2xl glass py-5">
           <div className="flex w-max animate-marquee gap-12 px-6">
-            {[...COMPANIES, ...COMPANIES].map((c, i) => (
-              <span
-                key={i}
-                className="whitespace-nowrap text-2xl font-bold tracking-tight text-muted-foreground/70 hover:text-primary transition-colors"
-              >
-                {c}
-              </span>
-            ))}
+            {[...companyLogos, ...companyLogos].map((c, i) => (
+  <div
+  key={i}
+className="flex h-20 w-44 items-center justify-center rounded-xl bg-white shadow-sm">
+  <img
+    src={c.logo_url}
+    alt={c.company_name}
+    className="max-h-12 max-w-32 object-contain"
+  />
+</div>
+))}
           </div>
         </section>
 
