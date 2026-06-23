@@ -20,8 +20,13 @@ export const Route = createFileRoute("/directory/$id")({
       { name: "description", content: "Deep dive into an alumnus's career, skills and tech stack." },
     ],
   }),
+  beforeLoad: () => requireAuth("student"),
+  loader: async ({ params }) => {
+    await requireAuth("student");
+    const alum = await fetchAlumniProfile(params.id);
+    return { alum };
+  },
   component: AlumniDetail,
-  notFoundComponent: () => <div className="p-10">Alumni not found.</div>,
 });
 
 function AlumniDetail() {
@@ -36,7 +41,7 @@ const [techUsed, setTechUsed] = useState<any[]>([]);
 const [extraCurricular, setExtraCurricular] = useState<any[]>([]);
 const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(profile?.email ?? "");
   const [subject, setSubject] = useState("");
   const [resume, setResume] = useState<File | null>(null);
   const [intent, setIntent] = useState<"Referral" | "Mentoring">("Referral");
@@ -140,7 +145,9 @@ if (loading) {
   if (!alum) {
     return (
       <div className="p-10">
-        <Link to="/student" className="text-primary underline">← Back to Directory</Link>
+        <Link to="/student" className="text-primary underline">
+          ← Back to Directory
+        </Link>
         <p className="mt-4">Alumni not found.</p>
       </div>
     );
@@ -282,7 +289,6 @@ console.log("FUNCTION ERROR:", error);
         </motion.div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_2fr]">
-          {/* Profile card */}
           <motion.div
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
@@ -304,13 +310,15 @@ console.log("FUNCTION ERROR:", error);
             </p>
 
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="mt-5">
-              <Button onClick={() => setOpen(true)} className="w-full gradient-bg-hero text-primary-foreground shadow-elegant">
+              <Button
+                onClick={() => setOpen(true)}
+                className="w-full gradient-bg-hero text-primary-foreground shadow-elegant"
+              >
                 <Mail className="mr-2 h-4 w-4" /> Request guidance
               </Button>
             </motion.div>
           </motion.div>
 
-          {/* Details */}
           <div className="space-y-6">
             <Section icon={<Sparkles className="h-4 w-4" />} title="Skills">
               <div className="flex flex-wrap gap-2">
@@ -445,7 +453,6 @@ console.log("FUNCTION ERROR:", error);
                   <span className="text-sm font-medium text-primary">
                     {resume ? `📎 ${resume.name}` : "Click to browse or drop your PDF"}
                   </span>
-                  <span className="text-xs text-muted-foreground">PDF, DOC up to 5 MB</span>
                   <input
                     id="resume-upload"
                     type="file"
@@ -457,12 +464,18 @@ console.log("FUNCTION ERROR:", error);
               </div>
               <div className="grid gap-2">
                 <Label>Choose your intent</Label>
-                <RadioGroup value={intent} onValueChange={(v) => setIntent(v as "Referral" | "Mentoring")} className="grid grid-cols-2 gap-3">
+                <RadioGroup
+                  value={intent}
+                  onValueChange={(v) => setIntent(v as "Referral" | "Mentoring")}
+                  className="grid grid-cols-2 gap-3"
+                >
                   {(["Referral", "Mentoring"] as const).map((opt) => (
                     <label
                       key={opt}
                       className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
-                        intent === opt ? "border-primary bg-primary/5 shadow-elegant" : "border-border hover:border-primary/50"
+                        intent === opt
+                          ? "border-primary bg-primary/5 shadow-elegant"
+                          : "border-border hover:border-primary/50"
                       }`}
                     >
                       <RadioGroupItem value={opt} />
@@ -471,9 +484,6 @@ console.log("FUNCTION ERROR:", error);
                   ))}
                 </RadioGroup>
               </div>
-              <p className="text-xs text-muted-foreground">
-                We'll simulate sending your request — a confirmation toast will appear.
-              </p>
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={sending} className="gradient-bg-hero text-primary-foreground">{sending ? "Sending Request..." : "Send Request"}</Button>
@@ -481,14 +491,23 @@ console.log("FUNCTION ERROR:", error);
             </form>
           </DialogContent>
         </Dialog>
-
       </div>
       <Footer />
     </PageTransition>
   );
 }
 
-function Section({ icon, title, children, delay = 0 }: { icon: React.ReactNode; title: string; children: React.ReactNode; delay?: number }) {
+function Section({
+  icon,
+  title,
+  children,
+  delay = 0,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+  delay?: number;
+}) {
   return (
     <motion.section
       initial={{ opacity: 0, y: 12 }}

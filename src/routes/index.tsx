@@ -7,7 +7,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { toast, Toaster } from "sonner";
 import { PageTransition } from "@/components/PageTransition";
 import { supabase } from '../lib/supabase'
@@ -86,17 +85,21 @@ function LandingPage() {
             <span className="text-foreground font-medium">Corporate</span>.
           </motion.p>
 
-          {/* Flip Card */}
-          <div className="perspective-1000 mt-12 w-full max-w-md">
+          {/* Flip Card — taller min-height when register side is active */}
+          <div
+            className={`perspective-1000 mt-12 w-full max-w-md transition-[min-height] duration-500 ${
+              flipped ? "min-h-[min(640px,78vh)]" : "min-h-[min(420px,62vh)]"
+            }`}
+          >
             <motion.div
-              className="relative preserve-3d w-full"
+              className="relative preserve-3d h-full w-full"
               animate={{ rotateY: flipped ? 180 : 0 }}
               transition={{ duration: 0.9, ease: [0.2, 0.8, 0.2, 1] }}
               style={{ transformStyle: "preserve-3d" }}
             >
               {/* Front - Login */}
               <div
-                className="backface-hidden"
+                className="backface-hidden h-full"
                 style={{ pointerEvents: flipped ? "none" : "auto" }}
                 aria-hidden={flipped}
               >
@@ -104,7 +107,7 @@ function LandingPage() {
               </div>
               {/* Back - Register */}
               <div
-                className="backface-hidden absolute inset-0"
+                className="backface-hidden absolute top-0 left-0 h-full w-full"
                 style={{ transform: "rotateY(180deg)", pointerEvents: flipped ? "auto" : "none" }}
                 aria-hidden={!flipped}
               >
@@ -136,12 +139,9 @@ function FloatingIcon({ children, className, delay = 0 }: { children: React.Reac
 }
 
 function AuthCard({ mode, onFlip, active }: { mode: "login" | "register"; onFlip: () => void; active: boolean }) {
-
   const [tab, setTab] = useState<"student" | "alumni">("student");
-  const [forgotStep, setForgotStep] = useState<0 | 1 | 2 | 3>(0);
-  const [otp, setOtp] = useState("");
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
+  const [forgotStep, setForgotStep] = useState<0 | 1>(0);
+  const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 const [studentLoginRoll, setStudentLoginRoll] = useState("");
 const [studentLoginEmail, setStudentLoginEmail] = useState("");
@@ -314,41 +314,50 @@ onFlip();  } catch (err) {
   }
 };
 
-  const resetForgot = () => { setForgotStep(0); setOtp(""); setNewPw(""); setConfirmPw(""); };
+  const resetForgot = () => {
+    setForgotStep(0);
+    setResetEmail("");
+  };
 
-  const submitOtp = (e: React.FormEvent) => {
+  const submitResetEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("OTP sent to your email!");
-    setForgotStep(2);
-  };
-  const verifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otp.length < 6) return toast.error("Enter the full 6-digit code");
-    toast.success("OTP verified!");
-    setForgotStep(3);
-  };
-  const finalReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPw.length < 6) return toast.error("Password must be at least 6 characters");
-    if (newPw !== confirmPw) return toast.error("Passwords do not match");
-    toast.success("Password reset successful! Please log in.");
-    resetForgot();
+    if (!isSupabaseConfigured) return toast.error("Supabase is not configured.");
+    setBusy(true);
+    try {
+      await resetPassword(resetEmail);
+      toast.success("Check your email for a password reset link.");
+      resetForgot();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send reset email");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="glass shadow-glow rounded-3xl p-6 sm:p-8" tabIndex={active ? undefined : -1}>
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as "student" | "alumni"); resetForgot(); }}>
-
-        <TabsList className="relative grid w-full grid-cols-2 rounded-xl bg-muted p-1">
+    <div
+      className="glass shadow-glow flex h-full max-h-[min(640px,78vh)] flex-col rounded-3xl p-6 sm:p-8"
+      tabIndex={active ? undefined : -1}
+    >
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setTab(v as "student" | "alumni");
+          resetForgot();
+        }}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <TabsList className="relative grid w-full shrink-0 grid-cols-2 rounded-xl bg-muted p-1">
           <TabsTrigger value="student" className="relative z-10 rounded-lg">Student</TabsTrigger>
           <TabsTrigger value="alumni" className="relative z-10 rounded-lg">Alumni</TabsTrigger>
         </TabsList>
 
-        <div className="mt-6 min-h-[300px]">
+        <div className="mt-6 flex min-h-0 flex-1 flex-col">
           <AnimatePresence mode="wait">
-            {mode === "login" && forgotStep > 0 ? (
+            {mode === "login" && forgotStep === 1 ? (
               <motion.div
-                key={`forgot-${forgotStep}-${tab}`}
+                key={`forgot-${tab}`}
+                className="flex min-h-0 flex-1 flex-col"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -356,79 +365,117 @@ onFlip();  } catch (err) {
               >
                 <button
                   type="button"
-                  onClick={() => (forgotStep === 1 ? resetForgot() : setForgotStep((s) => (s - 1) as 0 | 1 | 2 | 3))}
+                  onClick={resetForgot}
                   className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
                 >
                   <ArrowLeft className="h-3 w-3" /> Back
                 </button>
-
-                {forgotStep === 1 && (
-                  <form className="space-y-4" onSubmit={submitOtp}>
+                <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitResetEmail}>
+                  <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1">
                     <h2 className="text-xl font-semibold">Reset Password</h2>
                     <p className="text-sm text-muted-foreground">
-                      Enter your personal email to receive a one-time code.
+                      We&apos;ll email you a secure link to reset your password.
                     </p>
-                    <Field label="Personal Email" type="email" placeholder="you@personal.com" />
-                    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                      <Button type="submit" className="w-full gradient-bg-hero text-primary-foreground shadow-elegant">
-                        Send OTP
-                      </Button>
-                    </motion.div>
-                  </form>
-                )}
-
-                {forgotStep === 2 && (
-                  <form className="space-y-4" onSubmit={verifyOtp}>
-                    <h2 className="text-xl font-semibold">Enter OTP</h2>
-                    <p className="text-sm text-muted-foreground">We've sent a 6-digit code to your email.</p>
-                    <div className="flex justify-center pt-2">
-                      <InputOTP maxLength={6} value={otp} onChange={setOtp}>
-                        <InputOTPGroup>
-                          {[0, 1, 2, 3, 4, 5].map((i) => (
-                            <InputOTPSlot key={i} index={i} className="h-11 w-11 text-lg" />
-                          ))}
-                        </InputOTPGroup>
-                      </InputOTP>
-                    </div>
-                    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                      <Button type="submit" className="w-full gradient-bg-hero text-primary-foreground shadow-elegant">
-                        Verify
-                      </Button>
-                    </motion.div>
-                  </form>
-                )}
-
-                {forgotStep === 3 && (
-                  <form className="space-y-4" onSubmit={finalReset}>
-                    <h2 className="text-xl font-semibold">Set a New Password</h2>
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">New Password</Label>
-                      <Input type="password" required value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="••••••••" />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs font-medium text-muted-foreground">Confirm Password</Label>
-                      <Input type="password" required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} placeholder="••••••••" />
-                    </div>
-                    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                      <Button type="submit" className="w-full gradient-bg-hero text-primary-foreground shadow-elegant">
-                        Reset Password
-                      </Button>
-                    </motion.div>
-                  </form>
-                )}
+                    <Field
+                      label="Email"
+                      type="email"
+                      placeholder="you@dept.edu"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                    />
+                  </div>
+                  <AuthFormFooter>
+                    <Button
+                      type="submit"
+                      disabled={busy}
+                      className="w-full gradient-bg-hero text-primary-foreground shadow-elegant"
+                    >
+                      {busy ? "Sending…" : "Send reset link"}
+                    </Button>
+                  </AuthFormFooter>
+                </form>
               </motion.div>
             ) : (
               <motion.div
                 key={`${tab}-${mode}`}
+                className="flex min-h-0 flex-1 flex-col"
                 initial={{ opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -16 }}
                 transition={{ duration: 0.3 }}
               >
                 {mode === "login" ? (
-                  <form className="space-y-3" onSubmit={handleLogin}>
+                  <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleLogin}>
+                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+                      <h2 className="text-xl font-semibold">
+                        {tab === "student" ? "Student Login" : "Alumni Login"}
+                      </h2>
+                      {tab === "student" ? (
+                        <>
+                          <Field
+                            label="Department Email"
+                            type="email"
+                            placeholder="you@dept.edu"
+                            value={loginDeptEmail}
+                            onChange={(e) => setLoginDeptEmail(e.target.value)}
+                          />
+                          <Field
+                            label="Password"
+                            type="password"
+                            placeholder="••••••••"
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Field
+                            label="Email"
+                            type="email"
+                            placeholder="you@company.com"
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
+                          />
+                          <Field
+                            label="Alumni Code"
+                            placeholder="ALM-2019-DEMO"
+                            value={loginAlumniCode}
+                            onChange={(e) => setLoginAlumniCode(e.target.value)}
+                          />
+                          <Field
+                            label="Password"
+                            type="password"
+                            placeholder="••••••••"
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                          />
+                        </>
+                      )}
+                      <div className="flex justify-end pb-1">
+                        <button
+                          type="button"
+                          onClick={() => setForgotStep(1)}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Forgot Password?
+                        </button>
+                      </div>
+                    </div>
+                    <AuthFormFooter>
+                      <Button
+                        type="submit"
+                        disabled={busy}
+                        className="w-full gradient-bg-hero text-primary-foreground shadow-elegant"
+                      >
+                        {busy ? "Signing in…" : "Sign in"}
+                      </Button>
+                    </AuthFormFooter>
+                  </form>
+                ) : (
+                <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleRegister}>
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
                     <h2 className="text-xl font-semibold">
-                      {tab === "student" ? "Student Login" : "Alumni Login"}
+                      {tab === "student" ? "Student Signup" : "Alumni Signup"}
                     </h2>
                     {tab === "student" ? (
                       <>
@@ -628,7 +675,7 @@ onFlip();  } catch (err) {
                     <Button type="submit" className="w-full gradient-bg-hero text-primary-foreground shadow-elegant">
                       Proceed
                     </Button>
-                  </motion.div>
+                  </AuthFormFooter>
                 </form>
               )}
             </motion.div>
@@ -637,7 +684,7 @@ onFlip();  } catch (err) {
         </div>
       </Tabs>
 
-      <div className="mt-6 text-center text-sm text-muted-foreground">
+      <div className="mt-4 shrink-0 text-center text-sm text-muted-foreground">
         {mode === "login" ? (
           <>Not signed up?{" "}
             <button onClick={onFlip} className="font-medium text-primary underline-offset-4 hover:underline">
@@ -652,6 +699,15 @@ onFlip();  } catch (err) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Keeps Sign in / Proceed visible while form fields scroll above */
+function AuthFormFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky bottom-0 z-10 mt-3 shrink-0 border-t border-white/10 bg-gradient-to-t from-background via-background/95 to-background/80 pt-3 shadow-[0_-12px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-md">
+      {children}
     </div>
   );
 }

@@ -20,6 +20,16 @@ export const Route = createFileRoute("/alumni")({
       { name: "description", content: "Your mentorship analytics and outreach impact." },
     ],
   }),
+  beforeLoad: () => requireAuth("alumni"),
+  loader: async () => {
+    const { profile } = await requireAuth("alumni");
+    const [pending, scheduled, profileViews] = await Promise.all([
+      fetchPendingRequestsForAlumni(profile.id),
+      fetchScheduledMeetingsForAlumni(profile.id),
+      countProfileViews(profile.id),
+    ]);
+    return { profile, pending, scheduled, profileViews };
+  },
   component: AlumniDashboard,
 });
 

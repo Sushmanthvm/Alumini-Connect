@@ -13,15 +13,15 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 type Props = {
   role: "student" | "alumni";
-  name: string;
-  avatarSeed: string;
+  profile: UserProfile;
   extraNav?: ReactNode;
 };
 
 type CareerEntry = { year: string; company: string; role: string };
 
-export function TopNav({ role, name, avatarSeed, extraNav }: Props) {
+export function TopNav({ role, profile, extraNav }: Props) {
   const navigate = useNavigate();
+  const { refreshProfile } = useAuth();
   const [open, setOpen] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -341,7 +341,7 @@ const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
         <div className="flex items-center gap-3">
           {extraNav}
           <span className="hidden text-sm text-muted-foreground sm:block">
-            {role === "student" ? "Student" : "Alumni"} · {name}
+            {role === "student" ? "Student" : "Alumni"} · {profile.fullName}
           </span>
           <motion.button
             whileHover={{ scale: 1.06 }}
@@ -349,12 +349,12 @@ const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
             onClick={() => setOpen(true)}
             className="relative h-10 w-10 overflow-hidden rounded-full border-2 border-white shadow-elegant"
           >
-            <img src={avatar} alt={name} className="h-full w-full" />
+            <img src={avatar} alt={profile.fullName} className="h-full w-full object-cover" />
             <span className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-primary-foreground">
               <Pencil className="h-2.5 w-2.5" />
             </span>
           </motion.button>
-          <Button variant="ghost" size="icon" onClick={() => { toast.success("Logged out"); navigate({ to: "/" }); }}>
+          <Button variant="ghost" size="icon" onClick={() => void handleLogout()}>
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
@@ -366,7 +366,6 @@ const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
             <DialogTitle>Edit your profile</DialogTitle>
           </DialogHeader>
 
-          {/* Photo uploader (shared) */}
           <div className="flex items-center gap-4 rounded-xl bg-muted/40 p-3">
             <div className="h-16 w-16 overflow-hidden rounded-full ring-2 ring-white shadow-elegant">
               <img src={avatar} alt="" className="h-full w-full object-cover" />
@@ -379,25 +378,30 @@ const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </label>
           </div>
 
-          {role === "student" ? (
+          {loadingProfile && role === "alumni" ? (
+            <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading profile…
+            </p>
+          ) : role === "student" ? (
             <div className="space-y-3 pt-2">
               <div className="grid gap-2">
                 <Label>Name</Label>
-                <Input defaultValue={name} />
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Current Semester</Label>
-                <Input defaultValue="Semester 5" />
+                <Input
+                  placeholder="5"
+                  value={semester}
+                  onChange={(e) => setSemester(e.target.value)}
+                />
               </div>
-
-              {/* Locked / read-only fields */}
               <div className="mt-4 space-y-3 rounded-xl border border-dashed border-border bg-muted/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  🔒 Locked — contact admin to update
+                  Locked — contact admin to update
                 </p>
-                <ReadOnly label="Batch" value="2024" />
-                <ReadOnly label="Department" value="Computer Science" />
-                <ReadOnly label="Roll Number" value="CS21B1042" />
+                <ReadOnly label="Roll Number" value={profile.rollNumber ?? "—"} />
+                <ReadOnly label="Department Email" value={profile.departmentEmail ?? "—"} />
               </div>
             </div>
           ) : (
@@ -449,7 +453,6 @@ const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
 />
               </div>
 
-              {/* Dynamic Career Path editor */}
               <div className="mt-4 space-y-3 rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold">Career Path Timeline</Label>
