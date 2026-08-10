@@ -1,45 +1,68 @@
--- Alumni Connect — initial schema for Supabase (PostgreSQL)
--- Run in: Supabase Dashboard → SQL Editor → New query → Paste → Run
+-- Alumni Connect — RESET partial schema, then create everything cleanly
+-- Run this ENTIRE file once in Supabase SQL Editor.
+-- WARNING: deletes existing Alumni Connect public tables/types (no app data kept).
 
 -- ---------------------------------------------------------------------------
--- Extensions
+-- 1) Drop dependent objects first (order matters)
+-- ---------------------------------------------------------------------------
+drop trigger if exists on_auth_user_created on auth.users;
+drop function if exists public.handle_new_user();
+drop function if exists public.set_updated_at() cascade;
+
+drop table if exists public.profile_views cascade;
+drop table if exists public.inspirational_quotes cascade;
+drop table if exists public.hero_slides cascade;
+drop table if exists public.password_reset_tokens cascade;
+drop table if exists public.alumni_registration_codes cascade;
+drop table if exists public.meetings cascade;
+drop table if exists public.connection_requests cascade;
+drop table if exists public.resume_files cascade;
+drop table if exists public.alumni_certifications cascade;
+drop table if exists public.alumni_technologies cascade;
+drop table if exists public.alumni_skills cascade;
+drop table if exists public.career_entries cascade;
+drop table if exists public.alumni_profiles cascade;
+drop table if exists public.students cascade;
+drop table if exists public.profiles cascade;
+drop table if exists public.technologies cascade;
+drop table if exists public.skills cascade;
+drop table if exists public.departments cascade;
+drop table if exists public.companies cascade;
+drop table if exists public.degree_programs cascade;
+drop table if exists public.graduation_batches cascade;
+
+drop type if exists public.connection_status cascade;
+drop type if exists public.connection_intent cascade;
+drop type if exists public.user_status cascade;
+drop type if exists public.user_role cascade;
+
+-- ---------------------------------------------------------------------------
+-- 2) Extensions
 -- ---------------------------------------------------------------------------
 create extension if not exists "pgcrypto";
 
 -- ---------------------------------------------------------------------------
--- Enums (safe to re-run if a previous attempt created types but failed later)
+-- 3) Enums
 -- ---------------------------------------------------------------------------
-do $$ begin
-  create type public.user_role as enum ('student', 'alumni');
-exception when duplicate_object then null;
-end $$;
+create type public.user_role as enum ('student', 'alumni');
 
-do $$ begin
-  create type public.user_status as enum (
-    'active',
-    'suspended',
-    'pending_verification'
-  );
-exception when duplicate_object then null;
-end $$;
+create type public.user_status as enum (
+  'active',
+  'suspended',
+  'pending_verification'
+);
 
-do $$ begin
-  create type public.connection_intent as enum ('referral', 'mentoring');
-exception when duplicate_object then null;
-end $$;
+create type public.connection_intent as enum ('referral', 'mentoring');
 
-do $$ begin
-  create type public.connection_status as enum (
-    'pending',
-    'denied',
-    'accepted',
-    'cancelled'
-  );
-exception when duplicate_object then null;
-end $$;
+create type public.connection_status as enum (
+  'pending',
+  'denied',
+  'accepted',
+  'cancelled'
+);
 
 -- ---------------------------------------------------------------------------
--- Utility: auto-update updated_at
+-- 4) Utility
 -- ---------------------------------------------------------------------------
 create or replace function public.set_updated_at()
 returns trigger
@@ -52,7 +75,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Reference / lookup tables
+-- 5) Reference tables
 -- ---------------------------------------------------------------------------
 create table public.graduation_batches (
   id smallserial primary key,
@@ -60,9 +83,6 @@ create table public.graduation_batches (
   allows_btech boolean not null default false,
   created_at timestamptz not null default now()
 );
-
-comment on table public.graduation_batches is
-  'Alumni graduation years for directory filter (2005–2023+). allows_btech when year >= 2021.';
 
 create table public.degree_programs (
   id smallserial primary key,
@@ -98,8 +118,7 @@ create table public.technologies (
 );
 
 -- ---------------------------------------------------------------------------
--- Profiles (links to Supabase Auth: auth.users)
--- Use auth.users.id as profiles.id when you wire Supabase Auth.
+-- 6) Profiles + role tables
 -- ---------------------------------------------------------------------------
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -107,7 +126,6 @@ create table public.profiles (
   full_name text not null,
   photo_url text,
   status public.user_status not null default 'pending_verification',
-  -- Login helpers (see frontend landing page)
   roll_number text,
   department_email text,
   alumni_code text,
@@ -127,9 +145,6 @@ for each row execute function public.set_updated_at();
 
 create index profiles_role_idx on public.profiles (role);
 
--- ---------------------------------------------------------------------------
--- Role-specific profiles
--- ---------------------------------------------------------------------------
 create table public.students (
   user_id uuid primary key references public.profiles (id) on delete cascade,
   department_id smallint references public.departments (id),
@@ -167,7 +182,7 @@ create index alumni_profiles_directory_idx
   where is_directory_visible = true;
 
 -- ---------------------------------------------------------------------------
--- Alumni profile details (normalized from mock Alumni type)
+-- 7) Alumni details
 -- ---------------------------------------------------------------------------
 create table public.career_entries (
   id uuid primary key default gen_random_uuid(),
@@ -202,7 +217,7 @@ create table public.alumni_certifications (
 );
 
 -- ---------------------------------------------------------------------------
--- Connection requests & meetings (student/alumni inbox)
+-- 8) Requests / meetings / files
 -- ---------------------------------------------------------------------------
 create table public.resume_files (
   id uuid primary key default gen_random_uuid(),
@@ -254,9 +269,6 @@ create table public.meetings (
   created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------------
--- Alumni registration codes (signup validation)
--- ---------------------------------------------------------------------------
 create table public.alumni_registration_codes (
   code text primary key,
   batch_year smallint not null,
@@ -266,9 +278,6 @@ create table public.alumni_registration_codes (
   created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------------
--- Password reset OTP (if not using Supabase built-in reset only)
--- ---------------------------------------------------------------------------
 create table public.password_reset_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -281,9 +290,6 @@ create table public.password_reset_tokens (
 
 create index password_reset_tokens_user_idx on public.password_reset_tokens (user_id);
 
--- ---------------------------------------------------------------------------
--- Analytics & CMS
--- ---------------------------------------------------------------------------
 create table public.profile_views (
   id bigserial primary key,
   alumni_user_id uuid not null references public.alumni_profiles (user_id) on delete cascade,
@@ -311,8 +317,7 @@ create table public.inspirational_quotes (
 );
 
 -- ---------------------------------------------------------------------------
--- Auto-create profile row when a new auth user signs up (optional hook)
--- Customize metadata in signUp to pass role, full_name, etc.
+-- 9) Auth trigger: create profile on signup
 -- ---------------------------------------------------------------------------
 create or replace function public.handle_new_user()
 returns trigger
@@ -333,7 +338,15 @@ begin
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
+
+-- ---------------------------------------------------------------------------
+-- 10) Quick verify (should return 3)
+-- ---------------------------------------------------------------------------
+select table_name
+from information_schema.tables
+where table_schema = 'public'
+  and table_name in ('profiles', 'students', 'alumni_profiles')
+order by table_name;

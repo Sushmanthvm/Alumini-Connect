@@ -13,6 +13,7 @@ import { Route as StudentRouteImport } from './routes/student'
 import { Route as AlumniRouteImport } from './routes/alumni'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DirectoryIdRouteImport } from './routes/directory.$id'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const StudentRoute = StudentRouteImport.update({
   id: '/student',
@@ -34,17 +35,24 @@ const DirectoryIdRoute = DirectoryIdRouteImport.update({
   path: '/directory/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alumni': typeof AlumniRoute
   '/student': typeof StudentRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/directory/$id': typeof DirectoryIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alumni': typeof AlumniRoute
   '/student': typeof StudentRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/directory/$id': typeof DirectoryIdRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,28 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/alumni': typeof AlumniRoute
   '/student': typeof StudentRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/directory/$id': typeof DirectoryIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/alumni' | '/student' | '/directory/$id'
+  fullPaths: '/' | '/alumni' | '/student' | '/auth/callback' | '/directory/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/alumni' | '/student' | '/directory/$id'
-  id: '__root__' | '/' | '/alumni' | '/student' | '/directory/$id'
+  to: '/' | '/alumni' | '/student' | '/auth/callback' | '/directory/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/alumni'
+    | '/student'
+    | '/auth/callback'
+    | '/directory/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlumniRoute: typeof AlumniRoute
   StudentRoute: typeof StudentRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   DirectoryIdRoute: typeof DirectoryIdRoute
 }
 
@@ -99,6 +115,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DirectoryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -106,6 +129,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlumniRoute: AlumniRoute,
   StudentRoute: StudentRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   DirectoryIdRoute: DirectoryIdRoute,
 }
 export const routeTree = rootRouteImport

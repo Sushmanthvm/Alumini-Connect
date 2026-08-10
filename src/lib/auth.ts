@@ -1,5 +1,36 @@
+import type { User } from "@supabase/supabase-js";
+
 import { assertSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import type { UserProfile } from "@/lib/types";
+
+export function getOAuthRedirectTo() {
+  if (typeof window === "undefined") return undefined;
+  return `${window.location.origin}/auth/callback`;
+}
+
+/** @deprecated Use getOAuthRedirectTo() */
+export function getGoogleSsoRedirectTo() {
+  return getOAuthRedirectTo();
+}
+
+function userHasProvider(user: User, provider: string): boolean {
+  const primary = user.app_metadata?.provider;
+  const providers = user.app_metadata?.providers;
+  if (primary === provider) return true;
+  if (Array.isArray(providers) && providers.includes(provider)) return true;
+  return Boolean(user.identities?.some((identity) => identity.provider === provider));
+}
+
+export function isGoogleSsoUser(user: User): boolean {
+  return userHasProvider(user, "google");
+}
+
+export type OAuthCallbackResult = {
+  profile: UserProfile;
+  destination: "/student" | "/alumni";
+};
+
+export type OAuthIntent = "student" | "alumni";
 
 export type StudentRegisterInput = {
   fullName: string;
@@ -200,6 +231,216 @@ export async function loginStudent(departmentEmail: string, password: string) {
     throw new Error("This account is not a student profile.");
   }
   return data;
+}
+
+/**
+ * Start Google SSO for students.
+ * Redirects the browser to Google; returns via /auth/callback.
+ */
+export async function loginStudentWithGoogle() {
+  return startGoogleSso("student");
+}
+
+/**
+ * Start Google SSO for alumni.
+ * Redirects the browser to Google; returns via /auth/callback.
+ */
+export async function loginAlumniWithGoogle() {
+  return startGoogleSso("alumni");
+}
+
+async function startGoogleSso(intent: OAuthIntent) {
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem("oauth_intent", intent);
+  }
+  const supabase = assertSupabase();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      scopes: "openid email profile",
+      redirectTo: getOAuthRedirectTo(),
+      queryParams: {
+        prompt: "select_account",
+        access_type: "offline",
+      },
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
+function googleDisplayName(user: User, fallback: string): string {
+  const email = (user.email ?? "").trim().toLowerCase();
+  return (
+    (user.user_metadata?.full_name as string | undefined) ||
+    (user.user_metadata?.name as string | undefined) ||
+    (email ? email.split("@")[0] : fallback)
+  );
+}
+
+/**
+ * After Google SSO completes, ensure a student profile + students row exist.
+ * Blocks alumni accounts from using the student Google path.
+ */
+export async function ensureStudentFromGoogleSso(user: User): Promise<UserProfile> {
+  const supabase = assertSupabase();
+
+  if (!isGoogleSsoUser(user)) {
+    throw new Error("Not a Google sign-in.");
+  }
+
+  const email = (user.email ?? "").trim().toLowerCase();
+  const fullName = googleDisplayName(user, "Student");
+  const existing = await fetchUserProfile(user.id);
+
+  if (existing?.role === "alumni") {
+    await supabase.auth.signOut();
+    throw new Error("This Google account is linked to an alumni profile. Use Alumni login.");
+  }
+
+  const { error: profileError } = await supabase.from("profiles").upsert({
+    id: user.id,
+    role: "student",
+    full_name: existing?.fullName || fullName,
+    department_email: email || existing?.departmentEmail || null,
+    personal_email: existing?.email || email || null,
+    status: "active",
+  });
+  if (profileError) throw profileError;
+
+  const { error: studentError } = await supabase.from("students").upsert({
+    user_id: user.id,
+    department: "CYS",
+  });
+  if (studentError) throw studentError;
+
+  const profile = await fetchUserProfile(user.id);
+  if (!profile || profile.role !== "student") {
+    throw new Error("Could not create student profile after Google sign-in.");
+  }
+  return profile;
+}
+
+/**
+ * After Google SSO completes for alumni, ensure alumni profile + alumni_profiles row exist.
+ * Blocks student accounts from using the alumni Google path.
+ */
+export async function ensureAlumniFromGoogleSso(user: User): Promise<UserProfile> {
+  const supabase = assertSupabase();
+
+  if (!isGoogleSsoUser(user)) {
+    throw new Error("Not a Google sign-in.");
+  }
+
+  const email = (user.email ?? "").trim().toLowerCase();
+  const fullName = googleDisplayName(user, "Alumni");
+  const picture =
+    (user.user_metadata?.picture as string | undefined) ||
+    (user.user_metadata?.avatar_url as string | undefined) ||
+    null;
+
+  const existing = await fetchUserProfile(user.id);
+
+  if (existing?.role === "student") {
+    await supabase.auth.signOut();
+    throw new Error("This Google account is linked to a student profile. Use Student login.");
+  }
+
+  const { error: profileError } = await supabase.from("profiles").upsert({
+    id: user.id,
+    role: "alumni",
+    full_name: existing?.fullName || fullName,
+    personal_email: existing?.email || email || null,
+    photo_url: existing?.photoUrl || picture,
+    status: "active",
+  });
+  if (profileError) throw profileError;
+
+  const { error: alumniError } = await supabase.from("alumni_profiles").upsert({
+    user_id: user.id,
+    bio: "",
+    is_directory_visible: true,
+  });
+  if (alumniError) throw alumniError;
+
+  const profile = await fetchUserProfile(user.id);
+  if (!profile || profile.role !== "alumni") {
+    throw new Error("Could not create alumni profile after Google sign-in.");
+  }
+  return profile;
+}
+
+/** Finish PKCE OAuth redirect and bootstrap the correct role profile */
+export async function completeOAuthCallback(): Promise<OAuthCallbackResult> {
+  const supabase = assertSupabase();
+
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get("code");
+  const oauthError = url.searchParams.get("error_description") || url.searchParams.get("error");
+  if (oauthError) {
+    throw new Error(oauthError);
+  }
+
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+    if (error) throw error;
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error("Sign-in did not return a user session.");
+
+  if (!isGoogleSsoUser(user)) {
+    await supabase.auth.signOut();
+    throw new Error("Expected Google sign-in.");
+  }
+
+  const intent = (
+    typeof window !== "undefined" ? sessionStorage.getItem("oauth_intent") : null
+  ) as OAuthIntent | null;
+  if (typeof window !== "undefined") {
+    sessionStorage.removeItem("oauth_intent");
+  }
+
+  const existing = await fetchUserProfile(user.id);
+
+  // Returning user: honor existing role (and reject mismatched tab)
+  if (existing?.role === "alumni") {
+    if (intent === "student") {
+      await supabase.auth.signOut();
+      throw new Error("This Google account is linked to an alumni profile. Use Alumni login.");
+    }
+    const profile = await ensureAlumniFromGoogleSso(user);
+    return { profile, destination: "/alumni" };
+  }
+
+  if (existing?.role === "student") {
+    if (intent === "alumni") {
+      await supabase.auth.signOut();
+      throw new Error("This Google account is linked to a student profile. Use Student login.");
+    }
+    const profile = await ensureStudentFromGoogleSso(user);
+    return { profile, destination: "/student" };
+  }
+
+  // New Google user: role comes from which tab started SSO
+  if (intent === "alumni") {
+    const profile = await ensureAlumniFromGoogleSso(user);
+    return { profile, destination: "/alumni" };
+  }
+
+  // Default / student tab
+  const profile = await ensureStudentFromGoogleSso(user);
+  return { profile, destination: "/student" };
+}
+
+/** @deprecated Use completeOAuthCallback() */
+export async function completeGoogleSsoCallback(): Promise<UserProfile> {
+  const result = await completeOAuthCallback();
+  return result.profile;
 }
 
 export async function loginAlumni(email: string, alumniCode: string, password: string) {
