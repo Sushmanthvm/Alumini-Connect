@@ -11,16 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ConnectionRequestRow, ScheduledMeeting } from "@/lib/types";
-import { requireAuth } from "@/lib/route-guards";
-import {
-  acceptAndScheduleMeeting,
-  countProfileViews,
-  denyConnectionRequest,
-  fetchPendingRequestsForAlumni,
-  fetchScheduledMeetingsForAlumni,
-} from "@/lib/api/connections";
-
+import { getCurrentUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 export const Route = createFileRoute("/alumni")({
   head: () => ({
     meta: [
@@ -41,60 +33,275 @@ export const Route = createFileRoute("/alumni")({
   component: AlumniDashboard,
 });
 
+type Accepted = {
+  request: any;
+  date: string;
+  from: string;
+  to: string;
+};
+
 function AlumniDashboard() {
-  const { profile, pending: initialPending, scheduled: initialScheduled, profileViews } =
-    Route.useLoaderData();
-  const [requests, setRequests] = useState<ConnectionRequestRow[]>(initialPending);
-  const [accepted, setAccepted] = useState<ScheduledMeeting[]>(initialScheduled);
+  const [alumniName, setAlumniName] = useState("");
+const [requests, setRequests] = useState<any[]>([]); 
+ const [accepted, setAccepted] = useState<Accepted[]>([]);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [reviewedOpen, setReviewedOpen] = useState(false);
-  const [scheduling, setScheduling] = useState<ConnectionRequestRow | null>(null);
+  const [scheduling, setScheduling] = useState<any | null>(null);
   const [meetDate, setMeetDate] = useState("");
   const [timeFrom, setTimeFrom] = useState("");
   const [timeTo, setTimeTo] = useState("");
   const [view, setView] = useState<"profile" | "connect">("profile");
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [careerPath, setCareerPath] = useState<any[]>([]);
+  const [profileVisits, setProfileVisits] = useState(0);
+  const [reviewedRequests, setReviewedRequests] = useState<any[]>([]);
+  const [isScheduling, setIsScheduling] = useState(false);
+useEffect(() => {
+  const loadUser = async () => {
+    const user = await getCurrentUser();
+    setCurrentUser(user);
 
-  const handleDeny = async (id: string) => {
-    try {
-      await denyConnectionRequest(id);
-      setRequests((rs) => rs.filter((r) => r.id !== id));
-      toast.message("Request denied");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not deny request");
+    if (user?.email) {
+      const { data } = await supabase
+        .from("alumni")
+        .select("name")
+        .eq("email", user.email)
+        .single();
+
+      if (data) {
+        setAlumniName(data.name);
+      }
     }
   };
 
-  const handleAccept = (req: ConnectionRequestRow) => {
+  loadUser();
+}, []);
+useEffect(() => {
+  if (!currentUser?.email) return;
+
+  const loadRequests = async () => {
+    const { data: alumniProfile } = await supabase
+      .from("alumni")
+      .select("id")
+      .eq("email", currentUser.email)
+      .single();
+
+    if (!alumniProfile) return;
+
+    const { data: requestsData } = await supabase
+  .from("requests")
+.select("*")
+.eq("receiver_alumni_id", alumniProfile.id)
+.eq("status", "pending")
+.order("created_at", { ascending: false });
+
+if (!requestsData) return;
+const { data: reviewedData } = await supabase
+  .from("requests")
+  .select("*")
+  .eq("receiver_alumni_id", alumniProfile.id)
+  .in("status", ["accepted", "rejected"])
+  .order("created_at", { ascending: false });
+const enrichedRequests = await Promise.all(
+  requestsData.map(async (req) => {
+    if (req.sender_role === "alumni") {
+      const { data: alumniSender } = await supabase
+        .from("alumni")
+        .select("name")
+        .eq("id", req.sender_id)
+        .single();
+
+      return {
+        ...req,
+        student_name: alumniSender?.name || "Alumni",
+        semester: null,
+      };
+    }
+
+    const { data: student } = await supabase
+      .from("students")
+      .select("name, semester")
+      .eq("id", req.sender_id)
+      .single();
+
+    return {
+      ...req,
+      student_name: student?.name || "Student",
+      semester: student?.semester,
+    };
+  })
+);
+
+setRequests(enrichedRequests);
+const enrichedReviewed = await Promise.all(
+  (reviewedData || []).map(async (req) => {
+    if (req.sender_role === "alumni") {
+      const { data: alumniSender } = await supabase
+        .from("alumni")
+        .select("name")
+        .eq("id", req.sender_id)
+        .single();
+
+      return {
+        ...req,
+        student_name: alumniSender?.name || "Alumni",
+        semester: null,
+      };
+    }
+
+    const { data: student } = await supabase
+      .from("students")
+      .select("name, semester")
+      .eq("id", req.sender_id)
+      .single();
+
+    return {
+      ...req,
+      student_name: student?.name || "Student",
+      semester: student?.semester,
+    };
+  })
+);
+
+setReviewedRequests(enrichedReviewed);
+  };
+
+  loadRequests();
+}, [currentUser]);
+useEffect(() => {
+  if (!currentUser?.email) return;
+
+  const loadCareerPath = async () => {
+    const { data: alumniProfile } = await supabase
+      .from("alumni")
+      .select("id")
+      .eq("email", currentUser.email)
+      .single();
+
+    if (!alumniProfile) return;
+
+    const { data } = await supabase
+      .from("career_path")
+      .select("*")
+      .eq("alumni_id", alumniProfile.id)
+      .order("year");
+
+    setCareerPath(data || []);
+  };
+
+  loadCareerPath();
+  
+}, [currentUser]);
+useEffect(() => {
+  if (!currentUser?.email) return;
+
+  const loadVisitCount = async () => {
+    const { data: alumniProfile } = await supabase
+      .from("alumni")
+      .select("id")
+      .eq("email", currentUser.email)
+      .single();
+
+    if (!alumniProfile) return;
+
+    const { count } = await supabase
+      .from("profile_visits")
+      .select("*", { count: "exact", head: true })
+      .eq("alumni_id", alumniProfile.id);
+
+    setProfileVisits(count || 0);
+  };
+
+  loadVisitCount();
+}, [currentUser]);
+  const handleDeny = async (id: string) => {
+  const { error } = await supabase
+    .from("requests")
+    .update({ status: "rejected" })
+    .eq("id", id);
+
+  if (error) {
+    toast.error(error.message);
+    return;
+  }
+
+  setRequests((rs) =>
+    rs.filter((r) => r.id !== id)
+  );
+
+  toast.success("Request rejected");
+};
+
+  const handleAccept = (req: any) => {
     setScheduling(req);
   };
 
   const sendSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scheduling) return;
-    try {
-      await acceptAndScheduleMeeting({
-        requestId: scheduling.id,
-        scheduledByUserId: profile.id,
+    setIsScheduling(true);
+    const { error } = await supabase
+  .from("requests")
+  .update({ status: "accepted" })
+  .eq("id", scheduling.id);
+
+if (error) {
+  setIsScheduling(true);
+  toast.error(error.message);
+  return;
+}
+
+const { error: meetingError } = await supabase
+  .from("meetings")
+  .insert({
+    request_id: scheduling.id,
+    meeting_date: meetDate,
+    start_time: timeFrom,
+    end_time: timeTo,
+    alumni_id: scheduling.receiver_alumni_id,
+    requester_id: scheduling.sender_id,
+    status: "scheduled",
+  });
+
+if (meetingError) {
+  setIsScheduling(true);
+  toast.error(meetingError.message);
+  return;
+}
+
+const { data: studentData } = await supabase
+  .from("students")
+  .select("name, department_email")
+  .eq("id", scheduling.sender_id)
+  .single();
+
+if (studentData) {
+  const { data, error } = await supabase.functions.invoke(
+    "send-meeting-email",
+    {
+      body: {
+        studentEmail: studentData.department_email,
+        studentName: studentData.name,
         meetingDate: meetDate,
         startTime: timeFrom,
         endTime: timeTo,
-      });
-      setAccepted((a) => [
-        ...a,
-        { id: crypto.randomUUID(), request: scheduling, date: meetDate, from: timeFrom, to: timeTo },
-      ]);
-      setRequests((rs) => rs.filter((r) => r.id !== scheduling.id));
-      toast.success(`Meeting scheduled!`, {
-        description: `${scheduling.name} · ${meetDate} · ${timeFrom} – ${timeTo}`,
-      });
-      setScheduling(null);
-      setMeetDate("");
-      setTimeFrom("");
-      setTimeTo("");
-      if (requests.length <= 1) setInboxOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not schedule meeting");
+      },
     }
+  );
+
+  console.log("MEETING EMAIL DATA:", data);
+  console.log("MEETING EMAIL ERROR:", error);
+}
+
+    setAccepted((a) => [...a, { request: scheduling, date: meetDate, from: timeFrom, to: timeTo }]);
+    setRequests((rs) => rs.filter((r) => r.id !== scheduling.id));
+    toast.success(`Meeting scheduled! Event automatically added to both Student and Alumni Google Calendars.`, {
+      description: `${scheduling.student_name} · ${meetDate} · ${timeFrom} – ${timeTo}`,
+    });
+    setIsScheduling(false);
+    setScheduling(null);
+    setMeetDate(""); setTimeFrom(""); setTimeTo("");
+    if (requests.length <= 1) setInboxOpen(false);
   };
 
   const navTabs = (
@@ -124,7 +331,12 @@ function AlumniDashboard() {
     <PageTransition>
       <Toaster position="top-center" richColors />
       <div className="mx-auto max-w-6xl px-4 pb-16">
-        <TopNav role="alumni" profile={profile} extraNav={navTabs} />
+        <TopNav
+  role="alumni"
+  name={alumniName || "Alumni"}
+  avatarSeed={currentUser?.id ?? "alumni"}
+  extraNav={navTabs}
+/>
 
         <AnimatePresence mode="wait">
           {view === "profile" ? (
@@ -141,46 +353,81 @@ function AlumniDashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-3xl font-bold tracking-tight sm:text-4xl"
                 >
-                  Welcome back, {profile.fullName.split(" ")[0]} 👋
+                 Welcome back, {alumniName || "Alumni"} 👋
                 </motion.h1>
                 <p className="mt-2 text-muted-foreground">
-                  Here's the impact you've made this quarter.
+                  Manage student requests and mentorship opportunities.
                 </p>
               </section>
 
               <section className="mt-8 grid gap-5 sm:grid-cols-3">
-                <StatCard icon={<Eye className="h-5 w-5" />} label="Profiles Visited" value={profileViews} onClick={() => toast.info(`${profileViews} profile views recorded`)} />
+                <StatCard
+  icon={<Eye className="h-5 w-5" />}
+  label="Profiles Visited"
+  value={profileVisits}
+/>
                 <StatCard icon={<Mail className="h-5 w-5" />} label="Requests Inbox" value={requests.length} onClick={() => setInboxOpen(true)} />
-                <StatCard icon={<Star className="h-5 w-5" />} label="Reviewed" value={accepted.length} onClick={() => setReviewedOpen(true)} />
+                <StatCard icon={<Star className="h-5 w-5" />} label="Reviewed" value={reviewedRequests.length} onClick={() => setReviewedOpen(true)} />
               </section>
 
               <section className="mt-10 grid gap-5 lg:grid-cols-2">
-                <Panel title="Recent Mentees">
-                  <ul className="space-y-3">
-                    {["Aarav Singh — CS, Sem 5", "Diya Patel — IT, Sem 6", "Karan Roy — ECE, Sem 4"].map((m) => (
-                      <li key={m} className="flex items-center justify-between rounded-xl bg-muted/50 p-3 text-sm">
-                        <span>{m}</span>
-                        <span className="text-xs text-primary">Active</span>
-                      </li>
-                    ))}
-                  </ul>
-                </Panel>
+                <Panel title="Recent Requests">
+  <ul className="space-y-3">
+    {requests.slice(0, 3).map((r) => (
+      <li
+        key={r.id}
+        className="flex items-center justify-between rounded-xl bg-muted/50 p-3 text-sm"
+      >
+        <div>
+          <p className="font-medium">{r.student_name}</p>
+          <p className="text-xs text-muted-foreground">
+  {r.semester
+  ? `Sem ${r.semester} • ${r.intent}`
+  : `Alumni • ${r.intent}`}
+</p>
+        </div>
+
+        <span
+          className={`text-xs px-2 py-1 rounded-full ${
+            r.status === "accepted"
+              ? "bg-green-100 text-green-700"
+              : r.status === "rejected"
+              ? "bg-red-100 text-red-700"
+              : "bg-yellow-100 text-yellow-700"
+          }`}
+        >
+          {r.status}
+        </span>
+      </li>
+    ))}
+  </ul>
+</Panel>
                 <Panel title="Your Career Path">
-                  <ol className="relative ml-3 space-y-3 border-l-2 border-primary/30 pl-5 text-sm">
-                    {[
-                      { y: "2018", r: "SWE Intern @ Flipkart" },
-                      { y: "2019", r: "SDE-1 @ Razorpay" },
-                      { y: "2022", r: "SDE-2 @ Google" },
-                      { y: "2024", r: "Senior SWE @ Google" },
-                    ].map((c, i) => (
-                      <li key={i} className="relative">
-                        <span className="absolute -left-[27px] top-1.5 h-3 w-3 rounded-full gradient-bg-hero" />
-                        <p className="text-xs font-semibold text-primary">{c.y}</p>
-                        <p>{c.r}</p>
-                      </li>
-                    ))}
-                  </ol>
-                </Panel>
+  {careerPath.length === 0 ? (
+    <p className="text-sm text-muted-foreground">
+      No career milestones added yet.
+    </p>
+  ) : (
+    <ol className="space-y-3">
+      {careerPath.map((c) => (
+        <li
+          key={c.id}
+          className="rounded-xl bg-muted/50 p-3"
+        >
+          <p className="font-medium">
+            {c.job_role}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {c.company}
+          </p>
+          <p className="text-xs text-primary">
+            {c.year}
+          </p>
+        </li>
+      ))}
+    </ol>
+  )}
+</Panel>
               </section>
             </motion.div>
           ) : (
@@ -212,7 +459,7 @@ function AlumniDashboard() {
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <Calendar className="h-5 w-5 text-primary" />
-                    Schedule Google Meet with {scheduling.name}
+                    Schedule Google Meet with {scheduling.student_name}
                   </DialogTitle>
                   <DialogDescription>
                     Intent: <span className="font-medium text-primary">{scheduling.intent}</span>
@@ -235,7 +482,13 @@ function AlumniDashboard() {
                   </div>
                   <DialogFooter>
                     <Button type="button" variant="ghost" onClick={() => setScheduling(null)}>Back</Button>
-                    <Button type="submit" className="gradient-bg-hero text-primary-foreground">Send</Button>
+                    <Button
+  type="submit"
+  disabled={isScheduling}
+  className="gradient-bg-hero text-primary-foreground"
+>
+  {isScheduling ? "Scheduling..." : "Send"}
+</Button>
                   </DialogFooter>
                 </form>
               </motion.div>
@@ -248,9 +501,9 @@ function AlumniDashboard() {
                 transition={{ duration: 0.3 }}
               >
                 <DialogHeader>
-                  <DialogTitle>Pending Student Requests</DialogTitle>
+                  <DialogTitle>Pending Requests</DialogTitle>
                   <DialogDescription>
-                    Review and respond to student outreach.
+                    Review and respond to incoming requests.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="mt-4 max-h-[400px] space-y-3 overflow-y-auto pr-1">
@@ -268,22 +521,33 @@ function AlumniDashboard() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className="font-semibold flex flex-wrap items-center gap-2">
-                              {r.name}
-                              {r.senderType === "alumni" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-primary/15 to-accent/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary ring-1 ring-primary/30">
-                                  ★ Alumni · Batch {r.batch}
-                                </span>
-                              ) : (
-                                <span className="text-xs font-normal text-muted-foreground">
-                                  — {r.dept}, Sem {r.semester}
-                                </span>
-                              )}
-                            </p>
-                            <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${
-                              r.intent === "Referral" ? "bg-primary/10 text-primary" : "bg-accent/20 text-accent-foreground"
-                            }`}>{r.intent}</span>
-                            <p className="mt-2 text-xs text-muted-foreground">{r.message}</p>
+                            <p className="font-semibold">
+  {r.student_name}
+</p>
+
+<p className="text-xs text-muted-foreground mt-1">
+  {r.sender_role === "student"
+    ? `Student • Sem ${r.semester}`
+    : "Alumni"}
+</p>
+
+<span
+  className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${
+    r.intent === "Referral"
+      ? "bg-primary/10 text-primary"
+      : "bg-accent/20 text-accent-foreground"
+  }`}
+>
+  {r.intent}
+</span>
+
+<p className="mt-2 text-sm">
+  {r.subject}
+</p>
+
+<p className="mt-1 text-xs text-muted-foreground">
+  Status: {r.status}
+</p>
                           </div>
                           <div className="flex gap-2 shrink-0">
                             <Button size="sm" onClick={() => handleAccept(r)} className="gradient-bg-hero text-primary-foreground">
@@ -314,27 +578,43 @@ function AlumniDashboard() {
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 max-h-[400px] space-y-3 overflow-y-auto pr-1">
-            {accepted.length === 0 ? (
+            {reviewedRequests.length === 0 ? (
               <p className="text-center text-sm text-muted-foreground py-8">
                 No scheduled meetings yet. Accept a request from your inbox to get started.
               </p>
             ) : (
-              accepted.map((a) => (
+              reviewedRequests.map((r) => (
                 <motion.div
-                  key={a.id}
+                  key={r.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="glass rounded-xl p-4"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold">{a.request.name}</p>
-                      <span className="text-xs text-primary">{a.request.intent}</span>
+                      <p className="font-semibold">{r.student_name}</p>
+
+<p className="text-xs text-muted-foreground">
+  {r.sender_role === "student"
+    ? `Student • Sem ${r.semester}`
+    : "Alumni"}
+</p>
+
+<span className="text-xs ...">
+  {r.intent}
+</span>
                     </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <p className="flex items-center gap-1 justify-end"><Calendar className="h-3 w-3" />{a.date}</p>
-                      <p>{a.from} – {a.to}</p>
-                    </div>
+                    <div className="text-right">
+  <span
+    className={`text-xs px-2 py-1 rounded-full ${
+      r.status === "accepted"
+        ? "bg-green-100 text-green-700"
+        : "bg-red-100 text-red-700"
+    }`}
+  >
+    {r.status}
+  </span>
+</div>
                   </div>
                 </motion.div>
               ))

@@ -5,7 +5,7 @@ import { MapPin, ArrowRight, Loader2, ArrowLeft } from "lucide-react";
 import { fetchAlumniDirectory, fetchGraduationBatchYears } from "@/lib/api/alumni";
 import type { AlumniCard } from "@/lib/types";
 
-type Degree = "B.tech CYS" | "M.tech CYS";
+type Degree = "B.Tech" | "M.Tech";
 
 export function DirectoryExplorer({
   heading = "Alumni Directory",
@@ -26,23 +26,31 @@ export function DirectoryExplorer({
   const browsing = Boolean(batch && degree);
 
   useEffect(() => {
-    void fetchGraduationBatchYears().then((years) => setBatches(years.map(String)));
-  }, []);
+  const loadAlumni = async () => {
+    const { data, error } = await supabase
+      .from("alumni")
+      .select("*");
+
+    if (!error && data) {
+      setAlumni(data);
+    }
+
+    setLoading(false);
+  };
 
   useEffect(() => {
     onDirectoryActiveChange?.(browsing);
   }, [browsing, onDirectoryActiveChange]);
 
-  useEffect(() => {
-    if (!batch || !degree) {
-      setFiltered([]);
-      return;
-    }
-    setLoading(true);
-    void fetchAlumniDirectory(batch, degree)
-      .then(setFiltered)
-      .finally(() => setLoading(false));
-  }, [batch, degree]);
+const filtered = useMemo(() => {
+  if (!batch || !degree) return [];
+
+  return alumni.filter(
+    (a) =>
+      String(a.batch_year) === batch &&
+      a.degree === degree
+  );
+}, [batch, degree, alumni]);
 
   const selectBatch = (b: string) => {
     if (batch === b) {
@@ -210,8 +218,13 @@ export function DirectoryExplorer({
                           </div>
                           <div className="min-w-0 flex-1">
                             <h3 className="truncate font-semibold">{a.name}</h3>
-                            <p className="truncate text-sm text-muted-foreground">{a.role}</p>
-                            <p className="truncate text-sm font-medium text-primary">{a.company}</p>
+                            <p className="truncate text-sm text-muted-foreground">
+  {a.current_job_role}
+</p>
+<p className="truncate text-xs text-muted-foreground">
+  {a.degree} • Batch {a.batch_year}
+</p>
+                            <p className="truncate text-sm font-medium text-primary">{a.current_company}</p>
                           </div>
                         </div>
                         <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">

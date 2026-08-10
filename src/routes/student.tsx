@@ -64,11 +64,49 @@ function StudentDashboard() {
     batchSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  useEffect(() => {
+  const loadUser = async () => {
+    const user = await getCurrentUser();
+    setCurrentUser(user);
+
+    if (user?.email) {
+      const { data } = await supabase
+        .from("students")
+        .select("name")
+        .eq("department_email", user.email)
+        .single();
+
+      if (data) {
+        setStudentName(data.name);
+      }
+    }
+  };
+  
+  loadUser();
+}, []);
+useEffect(() => {
+  const loadLogos = async () => {
+    const { data } = await supabase
+      .from("company_logos")
+      .select("*")
+      .order("company_name");
+
+    setCompanyLogos(data || []);
+  };
+
+  loadLogos();
+}, []);
+
+
   return (
     <PageTransition>
       <Toaster position="top-center" richColors />
       <div className="mx-auto max-w-6xl px-4 pb-16">
-        <TopNav role="student" profile={profile} />
+        <TopNav
+  role="student"
+  name={studentName || "Student"}
+  avatarSeed={currentUser?.id ?? "student"}
+/>
 
         {!directoryActive && (
           <>

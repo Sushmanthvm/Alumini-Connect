@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { LogOut, Pencil, Plus, Trash2, Upload, Loader2 } from "lucide-react";
+import { LogOut, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,13 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
 import { toast } from "sonner";
-import type { UserProfile } from "@/lib/types";
-import { logout } from "@/lib/auth";
-import { getAvatarPublicUrl, uploadAvatar } from "@/lib/storage";
-import { fetchAlumniProfile, updateAlumniProfile } from "@/lib/api/alumni";
-import { assertSupabase } from "@/lib/supabase";
-import { useAuth } from "@/contexts/AuthContext";
-
+import { supabase } from "@/lib/supabase";
+import { getCurrentUser } from "@/lib/auth";
 type Props = {
   role: "student" | "alumni";
   profile: UserProfile;
@@ -29,99 +24,312 @@ export function TopNav({ role, profile, extraNav }: Props) {
   const { refreshProfile } = useAuth();
   const [open, setOpen] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(false);
-
-  const avatar =
-    photoPreview || getAvatarPublicUrl(profile.photoUrl, profile.id);
-
-  const [fullName, setFullName] = useState(profile.fullName);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [location, setLocation] = useState("");
-  const [company, setCompany] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
-  const [skills, setSkills] = useState("");
-  const [tech, setTech] = useState("");
-  const [certifications, setCertifications] = useState("");
-  const [bio, setBio] = useState("");
-  const [career, setCareer] = useState<CareerEntry[]>([]);
-  const [semester, setSemester] = useState("");
-
+const [company, setCompany] = useState("");
+const [jobRole, setJobRole] = useState("");
+const [quote, setQuote] = useState("");
+const [avatarPath, setAvatarPath] = useState("");
+const [skills, setSkills] = useState("");
+const [certifications, setCertifications] = useState("");
+const [techUsed, setTechUsed] = useState("");
+const [extraCurricular, setExtraCurricular] = useState("");
   useEffect(() => {
-    if (!open || role !== "alumni") return;
-    setLoadingProfile(true);
-    void fetchAlumniProfile(profile.id)
-      .then((a) => {
-        if (!a) return;
-        setFullName(a.name);
-        setLocation(a.location);
-        setCompany(a.company);
-        setJobTitle(a.role);
-        setSkills(a.skills.join(", "));
-        setTech(a.tech.join(", "));
-        setCertifications(a.certifications.join(", "));
-        setBio(a.bio);
-        setCareer(a.careerPath.map((c) => ({ year: c.year, company: c.company, role: c.role })));
-      })
-      .finally(() => setLoadingProfile(false));
-  }, [open, role, profile.id]);
+  getCurrentUser().then((user) => {
+    setCurrentUser(user);
+  });
+}, []);
+  const avatar =
+  photoPreview ||
+  avatarPath ||
+  `https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      setPendingPhoto(f);
-      setPhotoPreview(URL.createObjectURL(f));
+const [career, setCareer] = useState<CareerEntry[]>([]);
+useEffect(() => {
+  if (!currentUser?.id || role !== "alumni") return;
+
+  const loadCareerPath = async () => {
+    const { data, error } = await supabase
+      .from("career_path")
+      .select("*")
+      .eq("alumni_id", currentUser.id)
+      .order("year");
+
+    if (error) {
+      console.error(error);
+      return;
     }
+
+    setCareer(
+      (data || []).map((item) => ({
+        year: String(item.year),
+        company: item.company,
+        role: item.job_role,
+      }))
+    );
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      toast.success("Logged out");
-      navigate({ to: "/" });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Logout failed");
+  loadCareerPath();
+}, [currentUser, role]);
+useEffect(() => {
+  if (!currentUser?.id || role !== "alumni") return;
+
+  const loadProfile = async () => {
+    const { data: alumni } = await supabase
+      .from("alumni")
+      .select("*")
+      .eq("id", currentUser.id)
+      .single();
+
+    if (alumni) {
+      setLocation(alumni.location || "");
+      setCompany(alumni.current_company || "");
+      setJobRole(alumni.current_job_role || "");
+      setQuote(alumni.quote || "");
+      setAvatarPath(alumni.avatar_path || "");
     }
+
+
+    const { data: skillsData } = await supabase
+      .from("alumni_skills")
+      .select("skill")
+      .eq("alumni_id", currentUser.id);
+
+    setSkills(
+      (skillsData || []).map((s) => s.skill).join(", ")
+    );
+
+    const { data: certData } = await supabase
+      .from("alumni_certifications")
+      .select("certification")
+      .eq("alumni_id", currentUser.id);
+
+    setCertifications(
+      (certData || []).map((c) => c.certification).join(", ")
+    );
+
+    const { data: techData } = await supabase
+      .from("alumni_tech_used")
+      .select("technology")
+      .eq("alumni_id", currentUser.id);
+
+    setTechUsed(
+      (techData || []).map((t) => t.technology).join(", ")
+    );
+
+    const { data: extraData } = await supabase
+      .from("alumni_extra_curricular")
+      .select("activity")
+      .eq("alumni_id", currentUser.id);
+
+    setExtraCurricular(
+      (extraData || []).map((e) => e.activity).join(", ")
+    );
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      if (pendingPhoto) {
-        await uploadAvatar(profile.id, pendingPhoto);
-        setPendingPhoto(null);
-      }
+  loadProfile();
+}, [currentUser, role]);
 
-      if (role === "student") {
-        const supabase = assertSupabase();
-        await supabase.from("profiles").update({ full_name: fullName }).eq("id", profile.id);
-        const sem = parseInt(semester.replace(/\D/g, ""), 10);
-        if (sem) {
-          await supabase.from("students").update({ semester: sem }).eq("user_id", profile.id);
-        }
-      } else {
-        await updateAlumniProfile(profile.id, {
-          fullName,
-          location,
-          jobTitle,
-          companyName: company,
-          bio,
-          skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
-          tech: tech.split(",").map((t) => t.trim()).filter(Boolean),
-          certifications: certifications.split(",").map((c) => c.trim()).filter(Boolean),
-          careerPath: career,
+const saveProfile = async () => {
+  if (!currentUser?.id) return;
+
+  // Update alumni table
+  const { error: alumniError } = await supabase
+    .from("alumni")
+    .update({
+      location,
+      current_company: company,
+      current_job_role: jobRole,
+      quote,
+    })
+    .eq("id", currentUser.id);
+
+  if (alumniError) {
+    toast.error(alumniError.message);
+    return;
+  }
+
+  // Skills
+  await supabase
+    .from("alumni_skills")
+    .delete()
+    .eq("alumni_id", currentUser.id);
+
+  const skillRows = skills
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((skill) => ({
+      alumni_id: currentUser.id,
+      skill,
+    }));
+
+  if (skillRows.length) {
+    await supabase.from("alumni_skills").insert(skillRows);
+  }
+
+  // Certifications
+  await supabase
+    .from("alumni_certifications")
+    .delete()
+    .eq("alumni_id", currentUser.id);
+
+  const certRows = certifications
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((certification) => ({
+      alumni_id: currentUser.id,
+      certification,
+    }));
+
+  if (certRows.length) {
+    await supabase.from("alumni_certifications").insert(certRows);
+  }
+
+  // Tech Used
+  await supabase
+    .from("alumni_tech_used")
+    .delete()
+    .eq("alumni_id", currentUser.id);
+
+  const techRows = techUsed
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((technology) => ({
+      alumni_id: currentUser.id,
+      technology,
+    }));
+
+  if (techRows.length) {
+    await supabase.from("alumni_tech_used").insert(techRows);
+  }
+
+  // Extra Curricular
+  await supabase
+    .from("alumni_extra_curricular")
+    .delete()
+    .eq("alumni_id", currentUser.id);
+
+  const extraRows = extraCurricular
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((activity) => ({
+      alumni_id: currentUser.id,
+      activity,
+    }));
+
+  if (extraRows.length) {
+    await supabase.from("alumni_extra_curricular").insert(extraRows);
+  }
+
+  // Career Path
+  await supabase
+    .from("career_path")
+    .delete()
+    .eq("alumni_id", currentUser.id);
+
+  const careerRows = career.map((c) => ({
+    alumni_id: currentUser.id,
+    year: Number(c.year),
+    company: c.company,
+    job_role: c.role,
+  }));
+
+  if (careerRows.length) {
+    await supabase.from("career_path").insert(careerRows);
+  }
+
+  toast.success("Profile updated");
+  setOpen(false);
+};
+
+const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+
+  console.log("CURRENT USER:", currentUser);
+  console.log("FILE:", file);
+
+  if (!file) {
+    toast.error("No file selected");
+    return;
+  }
+
+  if (!currentUser) {
+    toast.error("User not logged in");
+    console.log("CURRENT USER IS NULL");
+    return;
+  }
+
+  try {
+    const fileExt = file.name.split(".").pop() || "jpg";
+
+    // TEMPORARY TEST PATH
+    const filePath = `${currentUser.id}-${Date.now()}.${fileExt}`;
+
+    console.log("FILE PATH:", filePath);
+
+    const { data: uploadData, error: uploadError } =
+      await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type,
+          cacheControl: "3600",
         });
-      }
 
-      await refreshProfile();
-      setOpen(false);
-      toast.success("Profile updated");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save profile");
-    } finally {
-      setSaving(false);
+    console.log("UPLOAD DATA:", uploadData);
+    console.log("UPLOAD ERROR:", uploadError);
+
+    if (uploadError) {
+      alert(JSON.stringify(uploadError, null, 2));
+      toast.error(uploadError.message);
+      return;
     }
-  };
+
+    const { data } = supabase.storage
+      .from("avatars")
+      .getPublicUrl(filePath);
+
+    const avatarUrl = data.publicUrl;
+
+    console.log("AVATAR URL:", avatarUrl);
+
+    let updateError = null;
+
+    if (role === "student") {
+      const result = await supabase
+        .from("students")
+        .update({ avatar_path: avatarUrl })
+        .eq("id", currentUser.id);
+
+      updateError = result.error;
+    } else {
+      const result = await supabase
+        .from("alumni")
+        .update({ avatar_path: avatarUrl })
+        .eq("id", currentUser.id);
+
+      updateError = result.error;
+    }
+
+    console.log("UPDATE ERROR:", updateError);
+
+    if (updateError) {
+      toast.error(updateError.message);
+      return;
+    }
+
+    setPhotoPreview(avatarUrl);
+    setAvatarPath(avatarUrl);
+    toast.success("Photo uploaded");
+  } catch (err) {
+    console.error("CATCH ERROR:", err);
+    toast.error("Upload failed");
+  }
+};
 
   return (
     <header className="sticky top-0 z-40 w-full">
@@ -199,23 +407,50 @@ export function TopNav({ role, profile, extraNav }: Props) {
           ) : (
             <div className="space-y-3 pt-2">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-                <Field label="Location" value={location} onChange={(e) => setLocation(e.target.value)} />
-              </div>
+                <Field label="Name" defaultValue={name} />
+<Field
+  label="Location"
+  value={location}
+  onChange={(e) => setLocation(e.target.value)}
+/>              </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Current Company" value={company} onChange={(e) => setCompany(e.target.value)} />
-                <Field label="Current Job Role" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+                <Field
+  label="Current Company"
+  value={company}
+  onChange={(e) => setCompany(e.target.value)}
+/>
+                <Field
+  label="Current Job Role"
+  value={jobRole}
+  onChange={(e) => setJobRole(e.target.value)}
+/>
               </div>
-              <Field label="Skills (comma-separated)" value={skills} onChange={(e) => setSkills(e.target.value)} />
-              <Field label="Tech Used" value={tech} onChange={(e) => setTech(e.target.value)} />
+<Field
+  label="Skills (comma-separated)"
+  value={skills}
+  onChange={(e) => setSkills(e.target.value)}
+/>              
+<Field
+  label="Tech Used"
+  value={techUsed}
+  onChange={(e) => setTechUsed(e.target.value)}
+/>
               <Field
-                label="Certifications"
-                value={certifications}
-                onChange={(e) => setCertifications(e.target.value)}
-              />
+  label="Extra Curricular"
+  value={extraCurricular}
+  onChange={(e) => setExtraCurricular(e.target.value)}
+/>
+              <Field
+  label="Certifications"
+  value={certifications}
+  onChange={(e) => setCertifications(e.target.value)}
+/>
               <div className="grid gap-2">
                 <Label>Personal Quote</Label>
-                <Textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={2} />
+                <Textarea
+  value={quote}
+  onChange={(e) => setQuote(e.target.value)}
+/>
               </div>
 
               <div className="mt-4 space-y-3 rounded-xl border border-border p-4">
@@ -282,16 +517,10 @@ export function TopNav({ role, profile, extraNav }: Props) {
           )}
 
           <DialogFooter>
-            <Button onClick={() => void handleSave()} disabled={saving || loadingProfile}>
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
-                </>
-              ) : (
-                "Save changes"
-              )}
-            </Button>
-          </DialogFooter>
+<Button onClick={saveProfile}>
+  Save changes
+</Button>
+         </DialogFooter>
         </DialogContent>
       </Dialog>
     </header>
@@ -315,3 +544,5 @@ function ReadOnly({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+ 
