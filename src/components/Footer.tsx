@@ -21,9 +21,17 @@ export function Footer() {
   }, []);
 
   return (
-    <footer className="relative mt-24 overflow-hidden border-t border-white/30 bg-gradient-to-b from-transparent to-primary/5">
+    <footer className="relative mt-24 overflow-hidden gradient-bg-hero">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-30"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 50% at 20% 80%, rgb(250 199 117 / 0.2), transparent 55%), radial-gradient(ellipse 50% 40% at 90% 10%, rgb(20 143 110 / 0.5), transparent 50%)",
+        }}
+      />
+
       <div className="relative mx-auto max-w-7xl px-4 py-16">
-        {/* Marquee background typography */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 select-none overflow-hidden"
@@ -32,7 +40,7 @@ export function Footer() {
             {Array.from({ length: 6 }).map((_, i) => (
               <span
                 key={i}
-                className="gradient-text text-[18vw] font-black leading-none tracking-tighter opacity-20 sm:text-[14vw]"
+                className="text-[18vw] font-black leading-none tracking-tighter text-[#FAEEDA]/10 sm:text-[14vw]"
               >
                 ALUMNI CONNECT ·
               </span>
@@ -46,16 +54,16 @@ export function Footer() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="glass rounded-full px-5 py-2 text-sm italic text-muted-foreground shadow-elegant"
+            className="rounded-full border border-[#FAC775]/40 bg-[#FAC775]/15 px-5 py-2 text-sm italic text-[#FAEEDA] shadow-elegant"
           >
             "{quote}"
           </motion.p>
 
-          <p className="font-sans text-base font-medium tracking-wide text-foreground/80">
+          <p className="font-sans text-base font-medium tracking-wide text-[#FAEEDA]/90">
             Developed by Students
           </p>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[#FAEEDA]/65">
             © {new Date().getFullYear()} Alumni Connect · Bridging students & alumni.
           </p>
         </div>

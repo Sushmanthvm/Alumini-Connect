@@ -40,8 +40,11 @@ Run these files **one at a time**, in order (copy entire file contents → **Run
 2. `migrations/20260529000001_seed_reference_data.sql`
 3. `migrations/20260529000002_row_level_security.sql`
 4. `migrations/20260529000003_storage_avatars_resumes.sql` ← **avatars & resumes**
+5. `migrations/20260529000004_oidc_profile_policies.sql` ← profile insert + alumni code read policies
 
 You should see **Success. No rows returned** (or row counts for seed inserts).
+
+Google SSO for students and alumni: see [`docs/google-sso-setup.md`](../docs/google-sso-setup.md).
 
 ---
 
